@@ -21,6 +21,12 @@ export default function LiveFeedMarquee() {
   const isInView = useInView(containerRef, { once: false, margin: "-15%" });
   const [assembled, setAssembled] = useState(false);
 
+  // The row slides in from the right exactly once, the first time it's seen,
+  // then hands off to the perpetual loop for good — later opacity fades
+  // (below) never touch its motion again, so the speed never changes.
+  const [enterStarted, setEnterStarted] = useState(false);
+  const [looping, setLooping] = useState(false);
+
   // Fade the cards in shortly after the heading has settled. A single state
   // flip — no per-frame React updates — keeps the section smooth.
   useEffect(() => {
@@ -32,12 +38,18 @@ export default function LiveFeedMarquee() {
     return () => clearTimeout(t);
   }, [isInView]);
 
+  // Latch true the first time `assembled` flips true, and never again —
+  // React's "adjust state during render" pattern, no effect needed.
+  if (assembled && !enterStarted) {
+    setEnterStarted(true);
+  }
+
   const letters = "LIVE FEED".split("");
 
   return (
     <section
       ref={containerRef}
-      className="relative w-full py-48 md:py-64 overflow-hidden border-y border-surface-border text-foreground my-24 flex flex-col justify-center"
+      className="relative w-full py-36 md:py-44 overflow-hidden text-foreground flex flex-col justify-center"
     >
       {/* Background heading — dims once the cards are in. */}
       <div
@@ -69,9 +81,23 @@ export default function LiveFeedMarquee() {
         className="relative z-10 flex flex-col justify-center transition-opacity duration-700 ease-out"
         style={{ opacity: assembled ? 1 : 0 }}
       >
+        {/* Slides in from fully off-screen right exactly once (enterStarted),
+            then hands off to the perpetual loop (looping) from the exact
+            position it left off at — no jump, no restart, constant speed
+            from that point on regardless of how often the section scrolls
+            in and out of view afterward. */}
         <div
-          className="w3-marquee-row flex w-[300%] items-center animate-[w3-marquee-left_44s_linear_infinite]"
-          style={{ animationPlayState: assembled ? "running" : "paused" }}
+          className={`w3-marquee-row flex w-[300%] items-center ${
+            looping
+              ? "animate-[w3-marquee-left_44s_linear_infinite]"
+              : enterStarted
+              ? "animate-[w3-marquee-enter_1.1s_ease-out_forwards]"
+              : ""
+          }`}
+          style={!enterStarted ? { transform: "translateX(33.3334%)" } : undefined}
+          onAnimationEnd={() => {
+            if (!looping) setLooping(true);
+          }}
         >
           {MARQUEE_ITEMS.map((item, idx) => {
             const yOffset =
@@ -99,7 +125,7 @@ export default function LiveFeedMarquee() {
       </div>
 
       <div
-        className={`absolute inset-x-0 bottom-10 md:bottom-16 z-20 flex justify-center w-full transition-opacity duration-700 ${
+        className={`absolute inset-x-0 bottom-6 md:bottom-8 z-20 flex justify-center w-full transition-opacity duration-700 ${
           assembled ? "opacity-100" : "opacity-0"
         }`}
       >

@@ -321,6 +321,19 @@ html.lenis body {
   }
 }
 
+/* One-time entrance: the row slides in from fully off-screen right, then
+   hands off to w3-marquee-left (which starts at the same translateX(0)) so
+   the perpetual loop afterward never jumps or changes speed. */
+@keyframes w3-marquee-enter {
+  from {
+    transform: translateX(33.3334%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
 .w3-marquee-row {
   will-change: transform;
   transform: translateZ(0);
