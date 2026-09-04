@@ -572,7 +572,7 @@ export default function LandingPage() {
         </section>
 
         {/* SECTION 2: LIVE ACTIVITY & SOCIAL PROOF (SUPERTEAM STYLE) */}
-        <section id="ticker" className="w-full max-w-6xl mx-auto px-6 py-6 border-t border-surface-border">
+        <section id="ticker" className="w-full max-w-6xl mx-auto px-6 py-2">
 
           {/* Glassmorphic Counter Modules with Rolling Digits */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -629,7 +629,7 @@ export default function LandingPage() {
         <LiveFeedMarquee />
 
         {/* SECTION 3: THE CORE CONFLICT (FIVERR VS W3HIRE CONTRAST MATRIX) */}
-        <section id="contrast" className="w-full max-w-6xl mx-auto px-6 py-8 border-t border-surface-border">
+        <section id="contrast" className="w-full max-w-6xl mx-auto px-6 py-2">
           <div className="text-center max-w-2xl mx-auto mb-8 space-y-2">
             <span className="text-xs font-mono uppercase tracking-widest text-moss font-semibold">
               The Core Conflict
@@ -758,7 +758,7 @@ export default function LandingPage() {
         </section>
 
         {/* SECTION 5: KEY PLATFORM FEATURES (LUSION CARD GRID) */}
-        <section id="features" className="w-full max-w-6xl mx-auto px-6 py-8 border-t border-surface-border">
+        <section id="features" className="w-full max-w-6xl mx-auto px-6 py-2">
           <div className="text-center max-w-2xl mx-auto mb-8 space-y-2">
             <span className="text-xs font-mono uppercase tracking-widest text-moss font-semibold">
               Platform Architecture
@@ -813,7 +813,7 @@ export default function LandingPage() {
         </section>
 
         {/* SECTION 6: INTERACTIVE FAQ SECTION (LUSION-STYLE ELASTIC EXPANDERS) */}
-        <section id="faq" className="w-full max-w-4xl mx-auto px-6 py-8 border-t border-surface-border">
+        <section id="faq" className="w-full max-w-4xl mx-auto px-6 py-2">
           <div className="text-center max-w-xl mx-auto mb-8 space-y-2">
             <span className="text-xs font-mono uppercase tracking-widest text-moss font-semibold">
               Frequently Asked Questions
@@ -862,7 +862,7 @@ export default function LandingPage() {
         </section>
 
         {/* SECTION 7: FOOTER CTA */}
-        <section className="w-full max-w-5xl mx-auto px-6 py-10">
+        <section className="w-full max-w-5xl mx-auto px-6 py-4">
           <div className="rounded-3xl bg-gradient-to-b from-surface via-surface to-background border-2 border-moss/40 p-8 sm:p-10 text-center space-y-6 shadow-2xl shadow-moss/10 relative overflow-hidden">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-moss/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -896,7 +896,7 @@ export default function LandingPage() {
       <OutroWordmark />
 
       {/* Footer */}
-      <footer className="border-t border-surface-border py-8 px-6 bg-surface/90 backdrop-blur-md">
+      <footer className="py-8 px-6 bg-surface/90 backdrop-blur-md">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted">
           <div className="flex items-center gap-2 font-bold text-foreground">
             <span>W<span className="text-moss">3</span>HIRE</span>

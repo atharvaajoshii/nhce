@@ -29,6 +29,18 @@ export default function MechanicsScrollShowcase({
       id="mechanics"
       className="relative w-full border-t border-surface-border"
     >
+      {/* Section heading, matching the eyebrow + title pattern used elsewhere
+          on the landing page — the sticky step story below has no title of
+          its own for this sequence as a whole. */}
+      <div className="relative z-10 text-center max-w-2xl mx-auto px-6 pt-16 pb-4 space-y-2">
+        <span className="text-xs font-mono uppercase tracking-widest text-moss font-semibold">
+          How It Works
+        </span>
+        <h2 className="text-3xl sm:text-4xl font-black text-foreground tracking-tight">
+          The Mechanics of Trustless Payments
+        </h2>
+      </div>
+
       {/* =========================================================
           STICKY CONTAINER
       ========================================================= */}

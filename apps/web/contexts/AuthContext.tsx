@@ -379,8 +379,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Clients and freelancers can never re-assign their own role — it's fixed at
+  // signup. Only an already-signed-in admin session may call this (e.g. from an
+  // admin tool); everyone else is a no-op.
   const updateUserRole = (role: "CLIENT" | "FREELANCER" | "ADMIN") => {
-    if (user) {
+    if (user && user.role === "ADMIN") {
       const updated = { ...user, role };
       setUser(updated);
       localStorage.setItem("w3hire_user", JSON.stringify(updated));
