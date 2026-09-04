@@ -141,7 +141,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (adminRes.ok) {
         const adminData = await adminRes.json();
         if (adminData.success && adminData.user) {
-          const adminToken = "admin_auth_jwt_" + Date.now();
+          // Credentials are confirmed against the real admins table above —
+          // now exchange them for a real, backend-verifiable JWT (instead of
+          // a synthetic client-only token) so the admin console can call the
+          // same authenticateToken-protected endpoints as everyone else.
+          let adminToken = "admin_auth_jwt_" + Date.now();
+          try {
+            const realRes = await fetch(`${API_BASE}/auth/admin-login`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: normalizedEmail, password }),
+            });
+            if (realRes.ok) {
+              const real = await realRes.json();
+              if (real.token) adminToken = real.token;
+            }
+          } catch (e) {
+            console.warn("Backend admin-login unavailable, using offline admin session.", e);
+          }
+
           setToken(adminToken);
           setUser(adminData.user);
           localStorage.setItem("w3hire_auth_token", adminToken);
@@ -171,6 +189,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("w3hire_auth_token", adminToken);
       localStorage.setItem("w3hire_user", JSON.stringify(adminUser));
       return { success: true, user: adminUser };
+    }
+
+    // 3. Neither of the frontend-side admin lists matched — try the real
+    // backend admins table directly (POST /auth/admin-login). This is the
+    // only path that reaches admin accounts that exist purely in the DB
+    // (not mirrored into the two fallback lists above), and it always
+    // returns a real, verifiable JWT.
+    try {
+      const realAdminRes = await fetch(`${API_BASE}/auth/admin-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      });
+      if (realAdminRes.ok) {
+        const real = await realAdminRes.json();
+        if (real.token && real.user) {
+          setToken(real.token);
+          setUser(real.user);
+          localStorage.setItem("w3hire_auth_token", real.token);
+          localStorage.setItem("w3hire_user", JSON.stringify(real.user));
+          return { success: true, user: real.user };
+        }
+      }
+    } catch (e) {
+      console.warn("Real admin-login check skipped, trying standard user login.", e);
     }
 
     try {

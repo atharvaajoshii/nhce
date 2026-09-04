@@ -20,18 +20,22 @@ import EmptyState from "@/components/ui/EmptyState";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getAuthToken,
+  fetchJob,
   submitMilestoneProof,
   verifyMilestoneOracle,
   releaseMilestonePayment,
-  apiFetch,
+  openDispute,
+  ApiError,
+  type Job,
+  type Milestone,
 } from "@/lib/api";
-import { activeProjects as mockProjects } from "@/lib/mock-data";
 
 export default function ProjectWorkspacePage() {
   const { id } = useParams();
   const { user } = useAuth();
-  const [job, setJob] = useState<any>(null);
+  const [job, setJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"workspace" | "chat">("workspace");
 
   // Determine if logged-in user is Client or Freelancer
@@ -39,35 +43,39 @@ export default function ProjectWorkspacePage() {
 
   // Submission Form State
   const [showSubmitModal, setShowSubmitModal] = useState<boolean>(false);
-  const [submittingMilestone, setSubmittingMilestone] = useState<any>(null);
+  const [submittingMilestone, setSubmittingMilestone] = useState<Milestone | null>(null);
   const [deliverableLink, setDeliverableLink] = useState<string>("");
   const [githubPrUrl, setGithubPrUrl] = useState<string>("");
   const [deploymentUrl, setDeploymentUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitMessage, setSubmitMessage] = useState<string>("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Oracle Verification State
   const [verifyingMilestoneId, setVerifyingMilestoneId] = useState<string | null>(null);
 
-  // Release & Dispute State
+  // Release State
   const [releasingMilestoneId, setReleasingMilestoneId] = useState<string | null>(null);
   const [txMessage, setTxMessage] = useState<string>("");
-  const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
-  const [rejectingMilestone, setRejectingMilestone] = useState<any>(null);
-  const [rejectionReasonInput, setRejectionReasonInput] = useState<string>("");
 
-  // Chat State
+  // Real dispute-open modal state (replaces the old fake reject/decline flow)
+  const [showDisputeModal, setShowDisputeModal] = useState<boolean>(false);
+  const [disputingMilestone, setDisputingMilestone] = useState<Milestone | null>(null);
+  const [disputeReason, setDisputeReason] = useState<string>("");
+  const [isOpeningDispute, setIsOpeningDispute] = useState<boolean>(false);
+
+  // Chat tab: a local-only demo thread (not wired to the real messaging
+  // system — see components/navigation/FloatingMessages.tsx for that).
+  // Left as-is; out of scope of the real-milestone rewiring below.
   const [messages, setMessages] = useState<Array<{ sender: string; text: string; time: string }>>([
-    { sender: "System", text: "Project workspace initialized. 4-Milestone Escrow Vault is active (25% per milestone).", time: "10:00 AM" },
-    { sender: "Client", text: "Hello! Please submit Milestone 1 (25%) proof when ready.", time: "10:05 AM" },
+    { sender: "System", text: "Project workspace initialized.", time: "10:00 AM" },
   ]);
   const [newMessage, setNewMessage] = useState<string>("");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  const storageKey = `w3hire_project_milestones_${id}`;
-
   useEffect(() => {
     fetchJobDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
@@ -76,108 +84,40 @@ export default function ProjectWorkspacePage() {
     }
   }, [activeTab, messages]);
 
-  const saveMilestonesToStorage = (updatedMs: any[]) => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(updatedMs));
-    } catch (e) {
-      console.error("Failed to persist milestone state", e);
-    }
-  };
-
-  const getPersistedMilestones = () => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return null;
-  };
-
-  const buildFourMilestones = (totalAmount: number, tokenSymbol: string, existingMs?: any[]) => {
-    const quarter = Number((totalAmount / 4).toFixed(2));
-    const persisted = getPersistedMilestones();
-
-    const titles = [
-      { num: 1, title: "Milestone 1: Smart Contract Architecture & Specification", desc: "Design specs, architecture diagrams, and interface definitions (25% vault payout)." },
-      { num: 2, title: "Milestone 2: Core Development & Sepolia Contract Deployment", desc: "Smart contract implementation, unit tests, and Sepolia testnet deployment (25% vault payout)." },
-      { num: 3, title: "Milestone 3: Web3 Frontend Integration & E2E Testing", desc: "Connect frontend wallet interactions, escrow hooks, and complete integration tests (25% vault payout)." },
-      { num: 4, title: "Milestone 4: Security Audit, Verification & Final Mainnet Release", desc: "Complete security audit verification, AI code review, and final handoff (25% vault payout)." },
-    ];
-
-    return titles.map((t, idx) => {
-      const matchDb = existingMs && existingMs[idx];
-      const matchLocal = persisted && persisted.find((p: any) => p.num === t.num || p.id === matchDb?.id);
-      const activeMatch = matchLocal || matchDb;
-
-      return {
-        id: activeMatch?.id || `ms-${t.num}`,
-        num: t.num,
-        title: t.title,
-        description: t.desc,
-        amount: quarter,
-        percent: 25,
-        tokenSymbol,
-        status: activeMatch?.status || (idx === 0 ? "PENDING" : "LOCKED"),
-        aiReviewScore: activeMatch?.aiReviewScore || null,
-        deliverableLink: activeMatch?.deliverableLink || null,
-        githubPrUrl: activeMatch?.githubPrUrl || null,
-        deploymentUrl: activeMatch?.deploymentUrl || null,
-        submittedAt: activeMatch?.submittedAt || null,
-        rejectionCount: activeMatch?.rejectionCount || 0,
-        rejectionReason: activeMatch?.rejectionReason || null,
-      };
-    });
-  };
-
   const fetchJobDetails = async () => {
     setIsLoading(true);
+    setLoadError(null);
     const token = getAuthToken();
-    try {
-      if (token) {
-        const res = await apiFetch<any>(`/jobs/${id}`, { token });
-        if (res && (res.job || res.id)) {
-          const rawJob = res.job || res;
-          const numBudget = typeof rawJob.budget === "number" ? rawJob.budget : parseFloat(rawJob.budget) || 2000;
-          const milestones = buildFourMilestones(numBudget, rawJob.tokenSymbol || "ETH", rawJob.milestones);
-          setJob({
-            ...rawJob,
-            budget: numBudget,
-            tokenSymbol: rawJob.tokenSymbol || "ETH",
-            milestones,
-          });
-          saveMilestonesToStorage(milestones);
-          setIsLoading(false);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("Could not load backend job, matching fallback local project.");
+
+    if (!token) {
+      setLoadError("Please sign in to view this project.");
+      setJob(null);
+      setIsLoading(false);
+      return;
     }
 
-    // Local fallback
-    const matched = mockProjects.find((p) => p.id === id) || mockProjects[0];
-    const numBudget = parseFloat(matched.budget.replace(/[^0-9.]/g, "")) || 2000;
-    const milestones = buildFourMilestones(numBudget, "ETH");
-    setJob({
-      id: matched.id,
-      title: matched.title,
-      description: matched.description || "Building Web3 Smart Contract Escrow Marketplace.",
-      budget: numBudget,
-      tokenSymbol: "ETH",
-      status: matched.status,
-      escrowAddress: "0xC65457eC28A9609Ee11AB4A01aa8322E8c571b62",
-      client: { name: matched.clientName || "Elena Rostova", email: "client@w3hire.io" },
-      milestones,
-    });
-    saveMilestonesToStorage(milestones);
-    setIsLoading(false);
+    try {
+      const res = await fetchJob(String(id), token);
+      setJob(res.job);
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : "Could not load this project.");
+      setJob(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleOpenSubmitModal = (milestone: any) => {
+  const sortedMilestones = (job?.milestones ?? []).slice().sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const handleOpenSubmitModal = (milestone: Milestone) => {
     setSubmittingMilestone(milestone);
     setDeliverableLink(milestone.deliverableLink || "");
     setGithubPrUrl(milestone.githubPrUrl || "");
     setDeploymentUrl(milestone.deploymentUrl || "");
     setSubmitMessage("");
+    setSubmitError(null);
     setShowSubmitModal(true);
   };
 
@@ -187,196 +127,116 @@ export default function ProjectWorkspacePage() {
 
     setIsSubmitting(true);
     setSubmitMessage("");
+    setSubmitError(null);
     const token = getAuthToken();
 
+    if (!token) {
+      setSubmitError("You must be signed in to submit a milestone.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      if (token) {
-        await submitMilestoneProof(token, submittingMilestone.id, {
-          deliverableLink,
-          githubPrUrl,
-          deploymentUrl,
-        });
-      }
-
-      setJob((prev: any) => {
-        const updatedMs = prev.milestones.map((m: any) =>
-          m.id === submittingMilestone.id
-            ? {
-                ...m,
-                status: "SUBMITTED",
-                deliverableLink,
-                githubPrUrl,
-                deploymentUrl,
-                submittedAt: new Date().toISOString(),
-              }
-            : m
-        );
-        saveMilestonesToStorage(updatedMs);
-        return { ...prev, milestones: updatedMs };
+      await submitMilestoneProof(token, submittingMilestone.id, {
+        deliverableLink,
+        githubPrUrl,
+        deploymentUrl,
       });
-
-      setSubmitMessage(`Milestone ${submittingMilestone.num} proof saved and submitted!`);
+      await fetchJobDetails();
+      setSubmitMessage("Milestone proof submitted successfully.");
       setTimeout(() => {
         setShowSubmitModal(false);
         setIsSubmitting(false);
-      }, 1200);
-    } catch (err: any) {
-      setJob((prev: any) => {
-        const updatedMs = prev.milestones.map((m: any) =>
-          m.id === submittingMilestone.id
-            ? {
-                ...m,
-                status: "SUBMITTED",
-                deliverableLink,
-                githubPrUrl,
-                deploymentUrl,
-                submittedAt: new Date().toISOString(),
-              }
-            : m
-        );
-        saveMilestonesToStorage(updatedMs);
-        return { ...prev, milestones: updatedMs };
-      });
-      setSubmitMessage(`Milestone ${submittingMilestone.num} proof saved (Local Mode)`);
-      setTimeout(() => {
-        setShowSubmitModal(false);
-        setIsSubmitting(false);
-      }, 1200);
+      }, 1000);
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : "Failed to submit milestone proof.");
+      setIsSubmitting(false);
     }
   };
 
   const handleRunOracleVerification = async (milestoneId: string) => {
     setVerifyingMilestoneId(milestoneId);
+    setTxMessage("");
     const token = getAuthToken();
 
+    if (!token) {
+      setTxMessage("You must be signed in to run verification.");
+      setVerifyingMilestoneId(null);
+      return;
+    }
+
     try {
-      let resultScore = 96;
-
-      if (token) {
-        try {
-          const apiRes = await verifyMilestoneOracle(token, milestoneId);
-          if (apiRes && apiRes.verificationScore !== undefined) {
-            resultScore = apiRes.verificationScore;
-          }
-        } catch (e) {}
-      }
-
-      setJob((prev: any) => {
-        const updatedMs = prev.milestones.map((m: any) =>
-          m.id === milestoneId ? { ...m, status: "APPROVED", aiReviewScore: resultScore } : m
-        );
-        saveMilestonesToStorage(updatedMs);
-        return { ...prev, milestones: updatedMs };
-      });
+      const res = await verifyMilestoneOracle(token, milestoneId);
+      await fetchJobDetails();
+      const passed = res.status === "APPROVED";
+      setTxMessage(
+        `Oracle verification ${passed ? "passed" : "did not pass"} — score ${res.verificationScore}/100. ${res.aiSummary}`
+      );
     } catch (err) {
-      console.error(err);
+      setTxMessage(err instanceof ApiError ? err.message : "Verification pipeline failed.");
     } finally {
       setVerifyingMilestoneId(null);
     }
   };
 
-  const handleReleasePayment = async (milestone: any) => {
+  const handleReleasePayment = async (milestone: Milestone) => {
     setReleasingMilestoneId(milestone.id);
     setTxMessage("");
     const token = getAuthToken();
 
+    if (!token) {
+      setTxMessage("You must be signed in to release payment.");
+      setReleasingMilestoneId(null);
+      return;
+    }
+
     try {
-      let txHash = "0x89a1f2...7b94c";
-      if (token) {
-        try {
-          const res = await releaseMilestonePayment(token, milestone.id);
-          if (res.txHash) txHash = res.txHash;
-        } catch (e) {}
-      }
-
-      setJob((prev: any) => {
-        const updatedMs = prev.milestones.map((m: any, idx: number) => {
-          if (m.id === milestone.id) {
-            return { ...m, status: "RELEASED" };
-          }
-          // Unlock next milestone
-          if (idx === milestone.num && m.status === "LOCKED") {
-            return { ...m, status: "PENDING" };
-          }
-          return m;
-        });
-        saveMilestonesToStorage(updatedMs);
-        return { ...prev, milestones: updatedMs };
-      });
-
-      setTxMessage(`25% Payment (${milestone.amount} ${milestone.tokenSymbol}) released on-chain! Tx: ${txHash}`);
-    } catch (err: any) {
-      setTxMessage("Failed to release payment.");
+      const res = await releaseMilestonePayment(token, milestone.id);
+      await fetchJobDetails();
+      setTxMessage(
+        `Payment (${milestone.amount} ${job?.tokenSymbol}) released.${res.txHash ? ` Tx: ${res.txHash}` : ""}`
+      );
+    } catch (err) {
+      setTxMessage(err instanceof ApiError ? err.message : "Failed to release payment.");
     } finally {
       setReleasingMilestoneId(null);
     }
   };
 
-  const handleDeclinePayment = async (milestone: any) => {
-    setJob((prev: any) => {
-      const updatedMs = prev.milestones.map((m: any) =>
-        m.id === milestone.id ? { ...m, status: "DECLINED" } : m
-      );
-      saveMilestonesToStorage(updatedMs);
-      return { ...prev, milestones: updatedMs };
-    });
-    setTxMessage(`Milestone ${milestone.num} submission declined. Issue escalated to platform support.`);
+  const handleOpenDisputeModal = (milestone: Milestone) => {
+    setDisputingMilestone(milestone);
+    setDisputeReason("");
+    setShowDisputeModal(true);
   };
 
-  const handleOpenRejectModal = (milestone: any) => {
-    setRejectingMilestone(milestone);
-    setRejectionReasonInput("");
-    setShowRejectModal(true);
-  };
-
-  const handleConfirmReject = (e: React.FormEvent) => {
+  const handleConfirmDispute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rejectingMilestone) return;
+    if (!disputingMilestone || !job) return;
 
-    const currentCount = (rejectingMilestone.rejectionCount || 0) + 1;
-    const isDisputed = currentCount >= 3;
-    const newStatus = isDisputed ? "DISPUTED" : "REJECTED_NEEDS_REVISION";
+    setIsOpeningDispute(true);
+    const token = getAuthToken();
 
-    setJob((prev: any) => {
-      const updatedMs = prev.milestones.map((m: any) => {
-        if (m.id === rejectingMilestone.id) {
-          return {
-            ...m,
-            status: newStatus,
-            rejectionCount: currentCount,
-            rejectionReason: rejectionReasonInput || "Client requested revisions for this deliverable.",
-          };
-        }
-        return m;
-      });
-      saveMilestonesToStorage(updatedMs);
-      return { ...prev, milestones: updatedMs };
-    });
-
-    if (isDisputed) {
-      setTxMessage(`⚠️ Warning ${currentCount}/3 reached! Milestone ${rejectingMilestone.num} automatically escalated to DISPUTE. Vault escrow funds locked.`);
-    } else {
-      setTxMessage(`⚠️ Warning ${currentCount}/3 issued to freelancer for Milestone ${rejectingMilestone.num}. Feedback saved.`);
+    if (!token) {
+      setTxMessage("You must be signed in to open a dispute.");
+      setIsOpeningDispute(false);
+      return;
     }
-    setShowRejectModal(false);
-  };
 
-  const handleEscalateToDispute = (milestone: any) => {
-    setJob((prev: any) => {
-      const updatedMs = prev.milestones.map((m: any) => {
-        if (m.id === milestone.id) {
-          return {
-            ...m,
-            status: "DISPUTED",
-            rejectionReason: m.rejectionReason || "Client manually escalated unverified work to platform dispute.",
-          };
-        }
-        return m;
+    try {
+      const res = await openDispute(token, {
+        jobId: job.id,
+        milestoneId: disputingMilestone.id,
+        reason: disputeReason,
       });
-      saveMilestonesToStorage(updatedMs);
-      return { ...prev, milestones: updatedMs };
-    });
-    setTxMessage(`🚨 Milestone ${milestone.num} moved to DISPUTE status. Vault escrow funds locked for arbitration.`);
+      setTxMessage(
+        `Dispute opened for Milestone. ${res.assignedJurors?.length || 0} juror(s) assigned for arbitration.`
+      );
+      setShowDisputeModal(false);
+    } catch (err) {
+      setTxMessage(err instanceof ApiError ? err.message : "Failed to open dispute.");
+    } finally {
+      setIsOpeningDispute(false);
+    }
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -397,7 +257,7 @@ export default function ProjectWorkspacePage() {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-muted space-y-3">
         <ArrowPathIcon className="w-8 h-8 animate-spin text-moss" />
-        <p className="text-sm font-mono">Loading 4-Milestone Project Workspace…</p>
+        <p className="text-sm font-mono">Loading project workspace…</p>
       </div>
     );
   }
@@ -408,7 +268,7 @@ export default function ProjectWorkspacePage() {
         <EmptyState
           icon={FolderOpenIcon}
           title="Project Not Found"
-          description="We couldn't find the requested project workspace."
+          description={loadError || "We couldn't find the requested project workspace."}
           action={{
             label: "Back to Projects",
             onClick: () => (window.location.href = "/projects"),
@@ -433,7 +293,7 @@ export default function ProjectWorkspacePage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-extrabold text-foreground tracking-tight">{job.title}</h1>
             <span className="px-3 py-1 rounded-md text-[10px] font-mono font-semibold uppercase tracking-wider bg-moss/20 text-moss border border-moss/30">
-              4-Milestone Vault (25% / Milestone)
+              {sortedMilestones.length} Milestone{sortedMilestones.length === 1 ? "" : "s"}
             </span>
           </div>
         </div>
@@ -448,7 +308,7 @@ export default function ProjectWorkspacePage() {
                 : "text-muted hover:text-foreground"
             }`}
           >
-            Workspace & 4 Milestones
+            Workspace & Milestones
           </button>
           <button
             onClick={() => setActiveTab("chat")}
@@ -476,7 +336,7 @@ export default function ProjectWorkspacePage() {
       {/* Main Tab Views */}
       {activeTab === "workspace" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main 4 Milestones Column */}
+          {/* Main Milestones Column */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-surface border border-surface-border rounded-2xl p-6 space-y-6">
               <div className="flex justify-between items-center pb-4 border-b border-surface-border">
@@ -491,16 +351,23 @@ export default function ProjectWorkspacePage() {
                 </span>
               </div>
 
-              {/* 4 Milestones List */}
+              {sortedMilestones.length === 0 && (
+                <p className="text-xs text-muted font-mono italic py-6 text-center">
+                  This job has no milestones defined yet.
+                </p>
+              )}
+
+              {/* Milestones List */}
               <div className="space-y-6">
-                {job.milestones?.map((milestone: any) => {
+                {sortedMilestones.map((milestone, idx) => {
+                  const isPending = milestone.status === "PENDING";
                   const isSubmitted = milestone.status === "SUBMITTED";
+                  const isVerifying = milestone.status === "VERIFYING";
                   const isApproved = milestone.status === "APPROVED";
                   const isReleased = milestone.status === "RELEASED";
-                  const isNeedsRevision = milestone.status === "REJECTED_NEEDS_REVISION";
                   const isDisputed = milestone.status === "DISPUTED";
-                  const isDeclined = milestone.status === "DECLINED";
-                  const isLocked = milestone.status === "LOCKED";
+                  const isAutoReleasing = milestone.status === "PROCESSING_AUTORELEASE";
+                  const percent = job.budget > 0 ? Math.round((milestone.amount / job.budget) * 100) : null;
 
                   return (
                     <div
@@ -510,16 +377,10 @@ export default function ProjectWorkspacePage() {
                           ? "border-moss/40 bg-moss/5"
                           : isApproved
                           ? "border-moss/30"
-                          : isSubmitted
+                          : isSubmitted || isVerifying
                           ? "border-amber-500/40 bg-amber-500/5"
-                          : isNeedsRevision
-                          ? "border-amber-500/50 bg-amber-500/10"
                           : isDisputed
                           ? "border-[#EF4444]/60 bg-[#EF4444]/10"
-                          : isDeclined
-                          ? "border-[#EF4444]/40 bg-[#EF4444]/5"
-                          : isLocked
-                          ? "border-surface-border opacity-60"
                           : "border-surface-border"
                       }`}
                     >
@@ -528,7 +389,8 @@ export default function ProjectWorkspacePage() {
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-[10px] font-mono font-bold uppercase text-moss tracking-wider">
-                              Milestone {milestone.num} (25% Payout = {milestone.amount} {milestone.tokenSymbol})
+                              Milestone {idx + 1}
+                              {percent !== null ? ` (${percent}% Payout = ${milestone.amount} ${job.tokenSymbol})` : ""}
                             </span>
                           </div>
                           <h4 className="font-bold text-sm text-foreground">{milestone.title}</h4>
@@ -536,7 +398,7 @@ export default function ProjectWorkspacePage() {
                         </div>
                         <div className="text-right shrink-0">
                           <div className="font-mono text-sm font-bold text-foreground">
-                            {milestone.amount} {milestone.tokenSymbol}
+                            {milestone.amount} {job.tokenSymbol}
                           </div>
                           <span
                             className={`text-[10px] font-mono font-semibold uppercase px-2.5 py-0.5 rounded border inline-block mt-1 ${
@@ -544,79 +406,32 @@ export default function ProjectWorkspacePage() {
                                 ? "bg-moss/20 text-moss border-moss/40"
                                 : isApproved
                                 ? "bg-moss/10 text-moss border-moss/30"
-                                : isSubmitted
+                                : isSubmitted || isVerifying
                                 ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
-                                : isNeedsRevision
-                                ? "bg-amber-500/25 text-amber-300 border-amber-500/50"
                                 : isDisputed
                                 ? "bg-[#EF4444]/20 text-[#EF4444] border-[#EF4444]/40 font-extrabold"
-                                : isDeclined
-                                ? "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/30"
-                                : isLocked
-                                ? "bg-white/5 text-muted border-white/10"
                                 : "bg-white/10 text-foreground border-white/20"
                             }`}
                           >
                             {isReleased
-                              ? "25% Released"
+                              ? "Released"
                               : isApproved
                               ? "Oracle Verified"
+                              : isVerifying
+                              ? "Verifying…"
                               : isSubmitted
                               ? "Under Client Review"
-                              : isNeedsRevision
-                              ? `Needs Revision (Warning ${milestone.rejectionCount || 1}/3)`
                               : isDisputed
-                              ? "Escrow Disputed"
-                              : isDeclined
-                              ? "Declined"
-                              : isLocked
-                              ? "Locked"
-                              : "In Progress"}
+                              ? "Disputed"
+                              : isAutoReleasing
+                              ? "Auto-Release Processing"
+                              : "Pending Submission"}
                           </span>
                         </div>
                       </div>
 
-                      {/* Warning Box for Rejection */}
-                      {milestone.rejectionReason && !isDisputed && (
-                        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 space-y-1 text-xs font-mono">
-                          <div className="flex items-center justify-between font-bold">
-                            <span className="flex items-center gap-1.5">
-                              <ExclamationTriangleIcon className="w-4 h-4 text-amber-400" />
-                              Rejection Warning {milestone.rejectionCount || 1} of 3 Issued by Client
-                            </span>
-                            <span className="text-[10px] uppercase bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/40">
-                              Revision Required
-                            </span>
-                          </div>
-                          <p className="text-muted leading-relaxed">"{milestone.rejectionReason}"</p>
-                        </div>
-                      )}
-
-                      {/* Dispute Banner if warnings reached 3 or escalated */}
-                      {isDisputed && (
-                        <div className="p-4 rounded-xl bg-[#EF4444]/20 border border-[#EF4444]/50 text-[#EF4444] space-y-1.5 text-xs font-mono">
-                          <div className="flex items-center justify-between font-bold">
-                            <span className="flex items-center gap-1.5 text-sm">
-                              <ExclamationTriangleIcon className="w-4.5 h-4.5 text-[#EF4444]" />
-                              ESCROW DISPUTE ACTIVE (Escrow Funds Locked)
-                            </span>
-                            <span className="text-[10px] uppercase bg-[#EF4444]/30 px-2 py-0.5 rounded border border-[#EF4444]/50">
-                              In Arbitration
-                            </span>
-                          </div>
-                          <p className="text-muted text-[11px] leading-relaxed">
-                            This milestone has reached the 3-warning rejection limit or was escalated by the client. Escrow funds are locked in the smart contract vault pending platform arbitration.
-                          </p>
-                          {milestone.rejectionReason && (
-                            <p className="text-foreground text-[11px] italic border-t border-[#EF4444]/30 pt-1">
-                              Reason: "{milestone.rejectionReason}"
-                            </p>
-                          )}
-                        </div>
-                      )}
-
                       {/* Oracle Authenticity Score Badge */}
-                      {milestone.aiReviewScore && (
+                      {milestone.aiReviewScore != null && (
                         <div className="p-3.5 rounded-xl bg-surface border border-moss/30 space-y-1.5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -673,65 +488,50 @@ export default function ProjectWorkspacePage() {
 
                       {/* Action Controls strictly separated by role */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-surface-border">
-                        {/* FREELANCER CONTROLS: Upload / Resubmit Proof Only */}
-                        {!isClient && !isReleased && !isLocked && !isDisputed && (
+                        {/* FREELANCER CONTROLS: Submit / Resubmit Proof */}
+                        {!isClient && !isReleased && !isDisputed && (
                           <button
                             onClick={() => handleOpenSubmitModal(milestone)}
                             className="px-4 py-2 rounded-xl bg-moss hover:bg-[#BEF264] text-background text-xs font-bold transition shadow"
                           >
-                            {isSubmitted || isNeedsRevision || isDeclined
-                              ? `Resubmit Milestone ${milestone.num} Proof`
-                              : `Submit Milestone ${milestone.num} Proof`}
+                            {isPending ? "Submit Milestone Proof" : "Resubmit Milestone Proof"}
                           </button>
                         )}
 
-                        {/* CLIENT CONTROLS: Run Oracle, Accept & Release 25%, Reject with Warning, Escalate */}
-                        {isClient && !isReleased && !isLocked && !isDisputed && (
+                        {/* CLIENT CONTROLS: Run Oracle, Release, Open Dispute */}
+                        {isClient && !isReleased && !isDisputed && (
                           <div className="flex flex-wrap items-center gap-2.5 w-full justify-between">
-                            {/* Run Oracle AI Evaluation Button (Client Only) */}
-                            {(isSubmitted || isApproved || isNeedsRevision) && (
-                              <button
-                                onClick={() => handleRunOracleVerification(milestone.id)}
-                                disabled={verifyingMilestoneId === milestone.id}
-                                className="px-3.5 py-2 rounded-xl bg-moss/20 hover:bg-moss/30 border border-moss/40 text-moss text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-50"
-                              >
-                                <ShieldCheckIcon className="w-4 h-4" />
-                                {verifyingMilestoneId === milestone.id
-                                  ? "Running Oracle Checks…"
-                                  : "Run Oracle AI Evaluation"}
-                              </button>
-                            )}
-
-                            {/* Release 25%, Reject & Issue Warning, Escalate Buttons */}
-                            {(isSubmitted || isApproved || isNeedsRevision) && (
+                            {(isSubmitted || isApproved) ? (
                               <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => handleRunOracleVerification(milestone.id)}
+                                  disabled={verifyingMilestoneId === milestone.id}
+                                  className="px-3.5 py-2 rounded-xl bg-moss/20 hover:bg-moss/30 border border-moss/40 text-moss text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-50"
+                                >
+                                  <ShieldCheckIcon className="w-4 h-4" />
+                                  {verifyingMilestoneId === milestone.id
+                                    ? "Running Oracle Checks…"
+                                    : "Run Oracle AI Evaluation"}
+                                </button>
                                 <button
                                   onClick={() => handleReleasePayment(milestone)}
                                   disabled={releasingMilestoneId === milestone.id}
-                                  className="px-4 py-2 rounded-xl bg-moss hover:bg-[#BEF264] text-background text-xs font-bold transition flex items-center gap-1.5 shadow"
+                                  className="px-4 py-2 rounded-xl bg-moss hover:bg-[#BEF264] text-background text-xs font-bold transition flex items-center gap-1.5 shadow disabled:opacity-50"
                                 >
                                   <CheckCircleIcon className="w-4 h-4" />
                                   {releasingMilestoneId === milestone.id
                                     ? "Processing Payout…"
-                                    : `Accept & Release 25% (${milestone.amount} ${milestone.tokenSymbol})`}
+                                    : `Accept & Release (${milestone.amount} ${job.tokenSymbol})`}
                                 </button>
                                 <button
-                                  onClick={() => handleOpenRejectModal(milestone)}
-                                  className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-semibold transition flex items-center gap-1"
-                                >
-                                  <ExclamationTriangleIcon className="w-3.5 h-3.5" />
-                                  Reject (Warning {(milestone.rejectionCount || 0) + 1}/3)
-                                </button>
-                                <button
-                                  onClick={() => handleEscalateToDispute(milestone)}
+                                  onClick={() => handleOpenDisputeModal(milestone)}
                                   className="px-3 py-2 rounded-xl bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border border-[#EF4444]/30 text-[#EF4444] text-xs font-medium transition flex items-center gap-1"
                                 >
-                                  Escalate to Dispute
+                                  <ExclamationTriangleIcon className="w-3.5 h-3.5" />
+                                  Open Dispute
                                 </button>
                               </div>
-                            )}
-
-                            {!isSubmitted && !isApproved && !isNeedsRevision && (
+                            ) : (
                               <span className="text-xs text-muted font-mono italic">
                                 Waiting for freelancer to submit deliverable proof…
                               </span>
@@ -742,7 +542,14 @@ export default function ProjectWorkspacePage() {
                         {isReleased && (
                           <div className="flex items-center gap-1.5 text-moss text-xs font-mono font-bold">
                             <CheckCircleIcon className="w-4 h-4" />
-                            <span>Milestone {milestone.num} (25%) Paid & Released</span>
+                            <span>Milestone {idx + 1} Paid & Released</span>
+                          </div>
+                        )}
+
+                        {isDisputed && (
+                          <div className="flex items-center gap-1.5 text-[#EF4444] text-xs font-mono font-bold">
+                            <ExclamationTriangleIcon className="w-4 h-4" />
+                            <span>This milestone is in dispute — awaiting arbitration.</span>
                           </div>
                         )}
                       </div>
@@ -762,7 +569,7 @@ export default function ProjectWorkspacePage() {
                 <div>
                   <span className="text-muted block mb-1">Escrow Contract</span>
                   <div className="bg-background p-2.5 rounded-lg border border-surface-border text-moss break-all">
-                    {job.escrowAddress || "0xC65457eC28A9609Ee11AB4A01aa8322E8c571b62"}
+                    {job.escrowAddress || "Not yet funded"}
                   </div>
                 </div>
 
@@ -773,7 +580,9 @@ export default function ProjectWorkspacePage() {
 
                 <div className="flex justify-between pt-2 border-t border-surface-border">
                   <span className="text-muted">Payout Structure</span>
-                  <span className="text-moss font-semibold">4 x 25% Milestones</span>
+                  <span className="text-moss font-semibold">
+                    {sortedMilestones.length} Milestone{sortedMilestones.length === 1 ? "" : "s"}
+                  </span>
                 </div>
 
                 <div className="flex justify-between pt-2 border-t border-surface-border">
@@ -785,7 +594,7 @@ export default function ProjectWorkspacePage() {
           </div>
         </div>
       ) : (
-        /* Embedded Project Chat Tab */
+        /* Embedded Project Chat Tab (local demo — see comment above) */
         <div className="bg-surface border border-surface-border rounded-2xl p-6 max-w-3xl mx-auto flex flex-col h-[520px]">
           <div className="pb-4 border-b border-surface-border flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -794,10 +603,6 @@ export default function ProjectWorkspacePage() {
                 Project Chat — {job.client?.name || "Client"}
               </h3>
             </div>
-            <span className="text-xs font-mono text-moss flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-moss animate-pulse"></span>
-              Realtime Active
-            </span>
           </div>
 
           {/* Messages List */}
@@ -869,7 +674,7 @@ export default function ProjectWorkspacePage() {
             >
               <div className="flex justify-between items-center pb-3 border-b border-surface-border">
                 <h3 className="font-extrabold text-base text-foreground">
-                  Submit Milestone {submittingMilestone.num} Proof (25% Payout)
+                  Submit Milestone Proof
                 </h3>
                 <button
                   onClick={() => setShowSubmitModal(false)}
@@ -882,6 +687,11 @@ export default function ProjectWorkspacePage() {
               {submitMessage && (
                 <div className="p-3 rounded-xl bg-moss/20 border border-moss/40 text-moss text-xs font-mono">
                   {submitMessage}
+                </div>
+              )}
+              {submitError && (
+                <div className="p-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-[#EF4444] text-xs font-mono">
+                  {submitError}
                 </div>
               )}
 
@@ -939,7 +749,7 @@ export default function ProjectWorkspacePage() {
                     disabled={isSubmitting}
                     className="px-5 py-2.5 rounded-xl bg-moss hover:bg-[#BEF264] text-background font-bold uppercase tracking-wider transition disabled:opacity-50"
                   >
-                    {isSubmitting ? "Submitting Proof…" : `Submit Milestone ${submittingMilestone.num}`}
+                    {isSubmitting ? "Submitting Proof…" : "Submit Milestone"}
                   </button>
                 </div>
               </form>
@@ -947,8 +757,8 @@ export default function ProjectWorkspacePage() {
           </div>
         )}
 
-        {/* Client Rejection Warning Modal */}
-        {showRejectModal && rejectingMilestone && (
+        {/* Open Dispute Modal (real POST /disputes/open) */}
+        {showDisputeModal && disputingMilestone && (
           <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -957,40 +767,33 @@ export default function ProjectWorkspacePage() {
               className="bg-surface border border-surface-border rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl"
             >
               <div className="flex justify-between items-center pb-3 border-b border-surface-border">
-                <div>
-                  <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
-                    <ExclamationTriangleIcon className="w-5 h-5 text-amber-400" />
-                    <span>Issue Warning & Reject Milestone {rejectingMilestone.num}</span>
-                  </h3>
-                  <span className="text-[11px] font-mono text-amber-400 mt-0.5 block">
-                    Warning {(rejectingMilestone.rejectionCount || 0) + 1} of 3 Max Warnings Allowed
-                  </span>
-                </div>
+                <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-400" />
+                  <span>Open Dispute — {disputingMilestone.title}</span>
+                </h3>
                 <button
-                  onClick={() => setShowRejectModal(false)}
+                  onClick={() => setShowDisputeModal(false)}
                   className="text-muted hover:text-foreground text-sm font-mono"
                 >
                   ✕
                 </button>
               </div>
 
-              {(rejectingMilestone.rejectionCount || 0) + 1 >= 3 && (
-                <div className="p-3.5 rounded-xl bg-[#EF4444]/20 border border-[#EF4444]/40 text-[#EF4444] text-xs font-mono">
-                  <strong>⚠️ Final Warning Notice:</strong> Issuing this 3rd warning will automatically escalate Milestone {rejectingMilestone.num} and lock escrow funds in platform DISPUTE mode.
-                </div>
-              )}
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-mono">
+                This creates a real dispute case: jurors will be assigned to arbitrate this milestone.
+              </div>
 
-              <form onSubmit={handleConfirmReject} className="space-y-4 text-xs font-mono">
+              <form onSubmit={handleConfirmDispute} className="space-y-4 text-xs font-mono">
                 <div>
                   <label className="block text-muted mb-1 uppercase text-[10px]">
-                    Rejection Feedback / Required Revisions
+                    Reason for Dispute
                   </label>
                   <textarea
                     rows={4}
                     required
-                    value={rejectionReasonInput}
-                    onChange={(e) => setRejectionReasonInput(e.target.value)}
-                    placeholder="Specify clearly what changes or additions are required before this milestone can be accepted..."
+                    value={disputeReason}
+                    onChange={(e) => setDisputeReason(e.target.value)}
+                    placeholder="Explain why this milestone's deliverable is being disputed..."
                     className="w-full bg-background border border-surface-border rounded-xl p-3 text-foreground placeholder:text-muted focus:border-amber-400 outline-none"
                   />
                 </div>
@@ -998,16 +801,17 @@ export default function ProjectWorkspacePage() {
                 <div className="flex justify-end gap-3 pt-3 border-t border-surface-border">
                   <button
                     type="button"
-                    onClick={() => setShowRejectModal(false)}
+                    onClick={() => setShowDisputeModal(false)}
                     className="px-4 py-2.5 rounded-xl border border-surface-border text-muted hover:text-foreground transition"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-background font-bold uppercase tracking-wider transition shadow"
+                    disabled={isOpeningDispute}
+                    className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-background font-bold uppercase tracking-wider transition shadow disabled:opacity-50"
                   >
-                    Confirm Rejection & Issue Warning {(rejectingMilestone.rejectionCount || 0) + 1}/3
+                    {isOpeningDispute ? "Opening Dispute…" : "Confirm & Open Dispute"}
                   </button>
                 </div>
               </form>

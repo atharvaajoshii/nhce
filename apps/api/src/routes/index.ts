@@ -16,6 +16,7 @@ import disputeRoutes from './dispute.routes';
 import webhookRoutes from './webhook.routes';
 import conversationRoutes from './conversation.routes';
 import notificationRoutes from './notification.routes';
+import adminRoutes from './admin.routes';
 import oracleRoutes from './oracle.routes';
 import stablecoinRoutes from './stablecoin.routes';
 
@@ -34,5 +35,6 @@ router.use('/webhooks', webhookRoutes);
 router.use('/conversations', conversationRoutes);
 router.use('/stablecoins', stablecoinRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;

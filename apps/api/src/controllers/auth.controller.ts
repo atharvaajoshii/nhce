@@ -204,6 +204,57 @@ export class AuthController {
   }
 
   /**
+   * POST /api/auth/admin-login
+   * Authenticate against the separate `admins` table (Supabase-managed team
+   * roster — same table the Next.js /api/admins route already validates
+   * against) and issue a real, verifiable JWT with role ADMIN, so the admin
+   * console can call the same authenticateToken-protected endpoints as
+   * everyone else instead of relying on a synthetic client-only session.
+   */
+  public async adminLogin(req: Request, res: Response): Promise<void> {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        res.status(400).json({ error: 'Email and password are required' });
+        return;
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+      const admin = await prisma.admin.findUnique({ where: { email: normalizedEmail } });
+
+      if (!admin || admin.password !== password) {
+        res.status(401).json({ error: 'Invalid admin credentials' });
+        return;
+      }
+
+      const tokenPayload = {
+        id: admin.id,
+        sub: admin.id,
+        email: admin.email,
+        role: 'ADMIN',
+        isPro: false,
+      };
+      const token = jwt.sign(tokenPayload, env.JWT_SECRET, { expiresIn: '7d' });
+
+      res.json({
+        token,
+        user: {
+          id: admin.id,
+          email: admin.email,
+          name: admin.name,
+          role: 'ADMIN',
+          seatNumber: admin.seatNumber,
+          title: admin.title,
+          walletAddress: null,
+        },
+      });
+    } catch (error: any) {
+      console.error('Admin login error:', error);
+      res.status(500).json({ error: 'Admin login failed', message: error.message });
+    }
+  }
+
+  /**
    * GET /api/auth/me
    * Fetch authenticated user's profile from database.
    */
@@ -211,6 +262,26 @@ export class AuthController {
     try {
       if (!req.user || !req.user.id) {
         res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // Admin sessions (POST /auth/admin-login) live in the separate `admins`
+      // table, not `User` — resolve those independently.
+      if (req.user.role === 'ADMIN') {
+        const admin = await prisma.admin.findUnique({ where: { id: req.user.id } });
+        if (!admin) {
+          res.status(404).json({ error: 'Admin profile not found' });
+          return;
+        }
+        res.json({
+          id: admin.id,
+          email: admin.email,
+          name: admin.name,
+          role: 'ADMIN',
+          seatNumber: admin.seatNumber,
+          title: admin.title,
+          walletAddress: null,
+        });
         return;
       }
 

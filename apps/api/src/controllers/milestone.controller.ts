@@ -11,7 +11,8 @@ import { githubOracle, IGitHubVerificationResult } from '../services/oracle/gith
 import { deploymentOracle, IDeploymentVerificationResult } from '../services/oracle/deployment.oracle';
 import { codeReviewerAI } from '../services/ai/codeReviewer.ai';
 import { escrowService } from '../services/web3/escrow.service';
-import { MilestoneStatus } from '@prisma/client';
+import { MilestoneStatus, LedgerEventType, LedgerStatus } from '@prisma/client';
+import { recordLedgerEvent, isMockTxHash, isMockEscrowAddress } from '../services/ledger.service';
 
 
 export class MilestoneController {
@@ -29,7 +30,7 @@ export class MilestoneController {
       const id = String(req.params.id);
       const { deliverableLink, githubPrUrl, deploymentUrl } = req.body;
 
-      const milestone = await prisma.milestone.findUnique({ where: { id } });
+      const milestone = await prisma.milestone.findUnique({ where: { id }, include: { job: true } });
       if (!milestone) {
         res.status(404).json({ error: 'Milestone not found' });
         return;
@@ -44,6 +45,22 @@ export class MilestoneController {
           status: MilestoneStatus.SUBMITTED,
           submittedAt: new Date()
         }
+      });
+
+      void recordLedgerEvent({
+        jobId: milestone.jobId,
+        milestoneId: id,
+        eventType: LedgerEventType.MILESTONE_SUBMITTED,
+        status: LedgerStatus.CONFIRMED,
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        amount: milestone.amount,
+        currency: milestone.job.tokenSymbol,
+        previousStatus: milestone.status,
+        newStatus: updatedMilestone.status,
+        description: 'Milestone deliverable submitted',
+        details: { deliverableLink, githubPrUrl, deploymentUrl },
+        dedupeKey: `milestone-submitted:${id}:${updatedMilestone.submittedAt!.getTime()}`
       });
 
       res.json({
@@ -110,6 +127,27 @@ export class MilestoneController {
         include: { job: true }
       });
 
+      void recordLedgerEvent({
+        jobId: verifiedMilestone.jobId,
+        milestoneId: id,
+        eventType: isApproved ? LedgerEventType.MILESTONE_APPROVED : LedgerEventType.MILESTONE_REJECTED,
+        status: LedgerStatus.CONFIRMED,
+        actorId: req.user?.id ?? null,
+        actorRole: req.user?.role ?? null,
+        amount: verifiedMilestone.amount,
+        currency: verifiedMilestone.job.tokenSymbol,
+        previousStatus: MilestoneStatus.SUBMITTED,
+        newStatus,
+        description: isApproved ? 'Milestone verification passed' : 'Milestone verification did not pass',
+        details: {
+          aiScore: aiReviewResult.score,
+          aiSummary: aiReviewResult.summary,
+          githubOracle: githubResult,
+          deploymentOracle: deploymentResult
+        },
+        dedupeKey: `milestone-verified:${id}:${Date.now()}`
+      });
+
       res.json({
         message: 'Milestone verification pipeline completed',
         milestone: verifiedMilestone,
@@ -147,14 +185,72 @@ export class MilestoneController {
 
       const escrowAddress = milestone.job.escrowAddress || '0x' + '1'.repeat(40);
 
+      void recordLedgerEvent({
+        jobId: milestone.jobId,
+        milestoneId: id,
+        escrowId: escrowAddress,
+        eventType: LedgerEventType.PAYMENT_PENDING,
+        status: LedgerStatus.PENDING,
+        actorId: req.user?.id ?? null,
+        actorRole: req.user?.role ?? null,
+        amount: milestone.amount,
+        currency: milestone.job.tokenSymbol,
+        previousStatus: milestone.status,
+        newStatus: null,
+        description: 'Milestone payout requested — awaiting blockchain execution',
+        dedupeKey: `payment-pending:${id}:${Date.now()}`
+      });
+
       // Trigger Smart Contract Release call on Sepolia Devnet
-      const releaseResult = await escrowService.releaseMilestonePayment(escrowAddress, 1);
+      let releaseResult: { success: boolean; txHash: string };
+      try {
+        releaseResult = await escrowService.releaseMilestonePayment(escrowAddress, 1);
+      } catch (releaseError: any) {
+        void recordLedgerEvent({
+          jobId: milestone.jobId,
+          milestoneId: id,
+          escrowId: escrowAddress,
+          eventType: LedgerEventType.PAYMENT_FAILED,
+          status: LedgerStatus.FAILED,
+          actorId: req.user?.id ?? null,
+          actorRole: req.user?.role ?? null,
+          amount: milestone.amount,
+          currency: milestone.job.tokenSymbol,
+          previousStatus: milestone.status,
+          newStatus: milestone.status,
+          description: 'Milestone payout failed',
+          details: { errorMessage: String(releaseError?.message || releaseError) },
+          dedupeKey: `payment-failed:${id}:${Date.now()}`
+        });
+        throw releaseError; // preserve existing error-response behavior exactly
+      }
+
+      const mocked = isMockTxHash(releaseResult.txHash) || isMockEscrowAddress(escrowAddress);
 
       // Update DB Status to RELEASED
       const releasedMilestone = await prisma.milestone.update({
         where: { id },
         data: { status: MilestoneStatus.RELEASED },
         include: { job: true }
+      });
+
+      void recordLedgerEvent({
+        jobId: milestone.jobId,
+        milestoneId: id,
+        escrowId: escrowAddress,
+        eventType: LedgerEventType.MILESTONE_RELEASED,
+        status: mocked ? LedgerStatus.PENDING : LedgerStatus.CONFIRMED,
+        actorId: req.user?.id ?? null,
+        actorRole: req.user?.role ?? null,
+        amount: milestone.amount,
+        currency: milestone.job.tokenSymbol,
+        previousStatus: milestone.status,
+        newStatus: releasedMilestone.status,
+        description: mocked
+          ? 'Milestone marked released (devnet mock payout — no real on-chain settlement)'
+          : 'Milestone payout released on-chain',
+        blockchainTransactionHash: releaseResult.txHash,
+        dedupeKey: `milestone-released:${id}`
       });
 
       res.json({
