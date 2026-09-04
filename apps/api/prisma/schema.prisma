@@ -60,6 +60,42 @@ enum VoteChoice {
   CLIENT_FAVOR
 }
 
+// Ledger enums mirror the already-live "LedgerEntry" table (migration
+// 20260904000001_add_ledger, applied to the DB before this schema entry was
+// added). JOB_CREATED / JOB_ACTIVATED are new, additive enum values needed
+// to log real job-level lifecycle events — see migration
+// 20260905000000_ledger_job_events for the minimal `ALTER TYPE ... ADD VALUE`.
+enum LedgerEventType {
+  JOB_CREATED
+  JOB_ACTIVATED
+  ESCROW_CREATED
+  ESCROW_FUNDED
+  ESCROW_STATUS_CHANGED
+  ESCROW_CANCELLED
+  ESCROW_COMPLETED
+  MILESTONE_CREATED
+  MILESTONE_SUBMITTED
+  MILESTONE_APPROVED
+  MILESTONE_REJECTED
+  MILESTONE_RELEASED
+  PAYMENT_PENDING
+  PAYMENT_CONFIRMED
+  PAYMENT_FAILED
+  PAYMENT_CANCELLED
+  PAYMENT_REFUNDED
+  BLOCKCHAIN_PENDING
+  BLOCKCHAIN_CONFIRMED
+  BLOCKCHAIN_FAILED
+}
+
+enum LedgerStatus {
+  PENDING
+  PROCESSING
+  CONFIRMED
+  FAILED
+  CANCELLED
+}
+
 model User {
   id                String           @id @default(uuid())
   email             String?          @unique
@@ -277,4 +313,36 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@index([senderId])
+}
+
+// Append-only financial/event ledger. No relations/FKs by design (matches the
+// already-live table exactly) — entries reference jobs/milestones/escrows by
+// plain id so a ledger-recording failure can never cascade into or block the
+// real business write it is observing. There is no dedicated jobId column on
+// the live table; jobId is carried in `details` (jsonb) on every entry.
+model LedgerEntry {
+  id                        String          @id @default(uuid())
+  escrowId                  String?
+  milestoneId               String?
+  transactionId             String?
+  eventType                 LedgerEventType
+  status                    LedgerStatus
+  actorId                   String?
+  actorRole                 String?
+  amount                    Float?
+  currency                  String?
+  previousStatus            String?
+  newStatus                 String?
+  description               String
+  details                   Json?
+  blockchainTransactionHash String?
+  dedupeKey                 String?         @unique
+  createdAt                 DateTime        @default(now())
+
+  @@index([milestoneId])
+  @@index([escrowId, createdAt])
+  @@index([transactionId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
 }

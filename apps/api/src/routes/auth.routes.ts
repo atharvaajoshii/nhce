@@ -11,6 +11,7 @@ const router = Router();
 
 router.post('/signup', (req, res) => authController.signup(req, res));
 router.post('/login', (req, res) => authController.login(req, res));
+router.post('/admin-login', (req, res) => authController.adminLogin(req, res));
 router.post('/logout', (req, res) => authController.logout(req, res));
 router.get('/me', authenticateToken, (req, res) => authController.getMe(req, res));
 

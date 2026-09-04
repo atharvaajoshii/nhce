@@ -10,8 +10,9 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { prisma } from '../config/db.config';
 import { escrowService } from '../services/web3/escrow.service';
-import { JobStatus, MilestoneStatus, ApplicationStatus } from '@prisma/client';
+import { JobStatus, MilestoneStatus, ApplicationStatus, LedgerEventType, LedgerStatus } from '@prisma/client';
 import { createNotification, createNotifications } from '../services/notification.service';
+import { recordLedgerEvent, isMockTxHash, isMockEscrowAddress } from '../services/ledger.service';
 
 /** Error thrown inside controllers and translated to an HTTP response. */
 class HttpError extends Error {
@@ -157,6 +158,39 @@ export class JobController {
         },
         include: { milestones: true, _count: { select: { applications: true } } }
       });
+
+      // Ledger: record job creation, and one entry per inline milestone created with it.
+      void recordLedgerEvent({
+        jobId: newJob.id,
+        eventType: LedgerEventType.JOB_CREATED,
+        status: LedgerStatus.CONFIRMED,
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        amount: newJob.budget,
+        currency: newJob.tokenSymbol,
+        previousStatus: null,
+        newStatus: newJob.status,
+        description: `Job "${newJob.title}" created`,
+        details: { title: newJob.title },
+        dedupeKey: `job-created:${newJob.id}`
+      });
+      for (const m of newJob.milestones) {
+        void recordLedgerEvent({
+          jobId: newJob.id,
+          milestoneId: m.id,
+          eventType: LedgerEventType.MILESTONE_CREATED,
+          status: LedgerStatus.CONFIRMED,
+          actorId: req.user.id,
+          actorRole: req.user.role,
+          amount: m.amount,
+          currency: newJob.tokenSymbol,
+          previousStatus: null,
+          newStatus: m.status,
+          description: `Milestone "${m.title}" created`,
+          details: { milestoneTitle: m.title },
+          dedupeKey: `milestone-created:${m.id}`
+        });
+      }
 
       // Increment the client's posted job counter for non-draft jobs
       if (status !== 'DRAFT') {
@@ -766,9 +800,11 @@ export class JobController {
         return;
       }
 
+      let previousJobStatus: JobStatus | null = null;
       const result = await prisma.$transaction(async (tx) => {
         const job = await tx.job.findUnique({ where: { id } });
         if (!job) throw new HttpError(404, 'Job not found');
+        previousJobStatus = job.status;
         if (job.clientId !== req.user!.id && req.user!.role !== 'ADMIN') {
           throw new HttpError(403, 'Forbidden: Only the job owner can select a freelancer');
         }
@@ -863,6 +899,21 @@ export class JobController {
           link: `/projects/${result.id}`,
         });
       }
+
+      void recordLedgerEvent({
+        jobId: result.id,
+        eventType: LedgerEventType.JOB_ACTIVATED,
+        status: LedgerStatus.CONFIRMED,
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        amount: result.budget,
+        currency: result.tokenSymbol,
+        previousStatus: previousJobStatus,
+        newStatus: result.status,
+        description: 'Freelancer selected — job activated',
+        details: { freelancerId: result.freelancerId },
+        dedupeKey: `job-activated:${result.id}`
+      });
 
       res.json({
         message: 'Freelancer selected successfully',
@@ -963,7 +1014,25 @@ export class JobController {
       if (!finalEscrowAddress) {
         const targetFreelancerAddr = freelancerAddress || job.freelancer?.walletAddress || '0x0000000000000000000000000000000000000000';
         const fundingWei = BigInt(Math.floor(job.budget * 1e18)).toString();
-        vaultResult = await escrowService.createJobEscrowVault(job.id, targetFreelancerAddr, tokenAddress, fundingWei);
+        try {
+          vaultResult = await escrowService.createJobEscrowVault(job.id, targetFreelancerAddr, tokenAddress, fundingWei);
+        } catch (vaultError: any) {
+          void recordLedgerEvent({
+            jobId: id,
+            eventType: LedgerEventType.BLOCKCHAIN_FAILED,
+            status: LedgerStatus.FAILED,
+            actorId: req.user.id,
+            actorRole: req.user.role,
+            amount: job.budget,
+            currency: job.tokenSymbol,
+            previousStatus: job.status,
+            newStatus: job.status,
+            description: 'Escrow vault deployment failed on-chain',
+            details: { errorMessage: String(vaultError?.message || vaultError) },
+            dedupeKey: `escrow-creation-failed:${id}:${Date.now()}`
+          });
+          throw vaultError; // preserve existing error-response behavior exactly
+        }
         finalEscrowAddress = vaultResult.escrowAddress;
       }
 
@@ -976,6 +1045,47 @@ export class JobController {
         },
         include: { client: true, freelancer: true, milestones: true }
       });
+
+      if (vaultResult) {
+        // A new vault was actually deployed (or simulated, if the factory isn't configured).
+        const mocked = isMockTxHash(vaultResult.txHash) || isMockEscrowAddress(vaultResult.escrowAddress);
+        void recordLedgerEvent({
+          jobId: id,
+          escrowId: finalEscrowAddress,
+          eventType: LedgerEventType.ESCROW_CREATED,
+          status: mocked ? LedgerStatus.PENDING : LedgerStatus.CONFIRMED,
+          actorId: req.user.id,
+          actorRole: req.user.role,
+          amount: job.budget,
+          currency: job.tokenSymbol,
+          previousStatus: job.status,
+          newStatus: updatedJob.status,
+          description: mocked
+            ? 'Escrow vault creation simulated (factory not configured on this environment)'
+            : 'Escrow vault deployed on-chain',
+          details: { escrowAddress: finalEscrowAddress, mocked },
+          blockchainTransactionHash: vaultResult.txHash,
+          dedupeKey: `escrow-created:${id}`
+        });
+      } else {
+        // Client linked a pre-deployed escrow address directly — no vault-creation call
+        // was made, so no on-chain funding confirmation is available at this call site.
+        void recordLedgerEvent({
+          jobId: id,
+          escrowId: finalEscrowAddress,
+          eventType: LedgerEventType.ESCROW_FUNDED,
+          status: LedgerStatus.PENDING,
+          actorId: req.user.id,
+          actorRole: req.user.role,
+          amount: job.budget,
+          currency: job.tokenSymbol,
+          previousStatus: job.status,
+          newStatus: updatedJob.status,
+          description: 'Job linked to a client-provided escrow address (on-chain funding not independently verified by the backend)',
+          details: { escrowAddress: finalEscrowAddress },
+          dedupeKey: `escrow-funded:${id}`
+        });
+      }
 
       res.json({
         message: 'Job escrow vault linked and funded successfully',

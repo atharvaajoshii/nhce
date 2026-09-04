@@ -63,6 +63,35 @@ export type JobStatus =
 
 export type ApplicationStatus = "SUBMITTED" | "UNDER_REVIEW" | "ACCEPTED" | "REJECTED";
 
+/** Real backend MilestoneStatus enum — DISPUTED and PROCESSING_AUTORELEASE exist
+ *  in the schema but no current code path sets them (opening a dispute creates a
+ *  separate Dispute record without changing the milestone's own status). */
+export type MilestoneStatus =
+  | "PENDING"
+  | "SUBMITTED"
+  | "VERIFYING"
+  | "APPROVED"
+  | "RELEASED"
+  | "DISPUTED"
+  | "PROCESSING_AUTORELEASE";
+
+export interface Milestone {
+  id: string;
+  jobId: string;
+  title: string;
+  description: string;
+  amount: number;
+  deadline: string | null;
+  deliverableLink: string | null;
+  githubPrUrl: string | null;
+  deploymentUrl: string | null;
+  aiReviewScore: number | null;
+  status: MilestoneStatus;
+  submittedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UserSummary {
   id: string;
   name: string | null;
@@ -90,7 +119,7 @@ export interface Job {
   updatedAt: string;
   client?: UserSummary;
   freelancer?: UserSummary | null;
-  milestones?: unknown[];
+  milestones?: Milestone[];
   _count?: { applications: number };
 }
 
@@ -287,8 +316,8 @@ export function submitMilestoneProof(
   token: string,
   milestoneId: string,
   data: { deliverableLink?: string; githubPrUrl?: string; deploymentUrl?: string }
-): Promise<{ message: string; milestone: any }> {
-  return apiFetch<{ message: string; milestone: any }>(`/milestones/${milestoneId}/submit`, {
+): Promise<{ message: string; milestone: Milestone }> {
+  return apiFetch<{ message: string; milestone: Milestone }>(`/milestones/${milestoneId}/submit`, {
     method: "POST",
     token,
     body: JSON.stringify(data),
@@ -300,13 +329,13 @@ export function verifyMilestoneOracle(
   milestoneId: string
 ): Promise<{
   message: string;
-  milestone: any;
+  milestone: Milestone;
   verificationScore: number;
   aiSummary: string;
   status: string;
-  pipelineResults: any;
+  pipelineResults: unknown;
 }> {
-  return apiFetch<any>(`/oracle/milestone/${milestoneId}/verify`, {
+  return apiFetch(`/oracle/milestone/${milestoneId}/verify`, {
     method: "POST",
     token,
   });
@@ -315,10 +344,24 @@ export function verifyMilestoneOracle(
 export function releaseMilestonePayment(
   token: string,
   milestoneId: string
-): Promise<{ message: string; milestone: any; txHash?: string }> {
-  return apiFetch<{ message: string; milestone: any; txHash?: string }>(`/milestones/${milestoneId}/release`, {
+): Promise<{ message: string; milestone: Milestone; txHash?: string }> {
+  return apiFetch<{ message: string; milestone: Milestone; txHash?: string }>(`/milestones/${milestoneId}/release`, {
     method: "POST",
     token,
+  });
+}
+
+/** Opens a real dispute case for a milestone — creates a Dispute row, assigns
+ *  jurors, and (best-effort) records an on-chain openDispute call. This does
+ *  NOT change the milestone's own status (no current code path does). */
+export function openDispute(
+  token: string,
+  data: { jobId: string; milestoneId: string; reason: string; evidenceUrls?: string[] }
+): Promise<{ message: string; dispute: unknown; assignedJurors: string[]; txHash: string }> {
+  return apiFetch(`/disputes/open`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(data),
   });
 }
 

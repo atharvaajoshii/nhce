@@ -41,6 +41,18 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
 }
 
 /**
+ * Middleware to restrict a route to ADMIN-role sessions. Must run after
+ * authenticateToken (relies on req.user being set).
+ */
+export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  if (!req.user || req.user.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Forbidden: Admin access required' });
+    return;
+  }
+  next();
+}
+
+/**
  * Middleware to attach the authenticated user when a valid Bearer JWT is present.
  * Unlike authenticateToken, requests without a token (or with an invalid one)
  * continue as anonymous — used on publicly-browsable routes that must still
