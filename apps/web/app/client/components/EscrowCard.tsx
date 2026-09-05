@@ -1,6 +1,7 @@
 "use client";
 
-import { Lock, CheckCircle2, AlertCircle, Clock, ExternalLink } from "lucide-react";
+import Link from "next/link";
+import { Lock, CheckCircle2, AlertCircle, Clock, ExternalLink, ArrowRight } from "lucide-react";
 
 export interface EscrowItem {
   id: string;
@@ -45,7 +46,7 @@ export default function EscrowCard({ escrow, onRelease }: EscrowCardProps) {
             </span>
           )}
           {escrow.status === "milestone_submitted" && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F59E0B]/20 border border-[#F59E0B]/40 text-[#F59E0B] text-[10px] font-mono">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F59E0B]/20 border border-[#F59E0B]/40 text-[#F59E0B] text-[10px] font-mono animate-pulse">
               <Clock className="w-3 h-3" /> Deliverables Ready
             </span>
           )}
@@ -90,15 +91,31 @@ export default function EscrowCard({ escrow, onRelease }: EscrowCardProps) {
       </div>
 
       {/* Action Area */}
-      {escrow.status === "milestone_submitted" && (
-        <div className="pt-2">
+      {escrow.status === "milestone_submitted" ? (
+        <div className="pt-2 flex flex-col sm:flex-row gap-2">
+          <Link
+            href={`/projects/${escrow.id}`}
+            className="flex-1 py-2.5 rounded-xl bg-moss hover:bg-[#BEF264] text-background font-bold text-xs transition flex items-center justify-center gap-1.5 shadow"
+          >
+            <span>Review Deliverables</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
           <button
             onClick={() => onRelease(escrow.id)}
-            className="w-full py-2.5 rounded-xl bg-[#22C55E] hover:bg-moss text-background font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-[#22C55E]/20"
+            className="py-2.5 px-3 rounded-xl bg-[#22C55E]/20 hover:bg-[#22C55E]/30 text-[#22C55E] border border-[#22C55E]/40 font-semibold text-xs transition flex items-center justify-center gap-1.5"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>Approve & Release Funds to {escrow.freelancerName}</span>
+            <span>Release</span>
           </button>
+        </div>
+      ) : (
+        <div className="pt-1">
+          <Link
+            href={`/projects/${escrow.id}`}
+            className="w-full py-2 rounded-xl bg-background border border-surface-border hover:border-moss/40 text-muted hover:text-moss text-[11px] font-mono transition flex items-center justify-center gap-1.5"
+          >
+            <span>Open Project Workspace →</span>
+          </Link>
         </div>
       )}
     </div>

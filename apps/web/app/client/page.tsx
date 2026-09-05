@@ -87,7 +87,14 @@ export default function ClientDashboardPage() {
       const savedEscrows = localStorage.getItem("w3hire_client_escrows");
       if (savedEscrows) {
         try {
-          setEscrows(JSON.parse(savedEscrows));
+          const parsed: EscrowItem[] = JSON.parse(savedEscrows);
+          const uniqueMap = new Map<string, EscrowItem>();
+          for (const item of parsed) {
+            if (!item.projectTitle) continue;
+            const key = item.projectTitle.trim().toLowerCase();
+            if (!uniqueMap.has(key)) uniqueMap.set(key, item);
+          }
+          setEscrows(Array.from(uniqueMap.values()));
         } catch (e) {
           console.error(e);
         }
@@ -257,7 +264,7 @@ export default function ClientDashboardPage() {
                 </button>
               </div>
             ) : (
-              realJobs.map((job) => (
+              realJobs.map((job: any) => (
                 <div
                   key={job.id}
                   className="p-6 rounded-2xl bg-surface border border-surface-border hover:border-moss/50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6"
@@ -266,7 +273,7 @@ export default function ClientDashboardPage() {
                   <div className="space-y-2 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full uppercase font-semibold bg-moss/20 text-moss border border-moss/30">
-                        {JOB_STATUS_LABELS[job.status]}
+                        {(JOB_STATUS_LABELS as any)[job.status] || "OPEN"}
                       </span>
                       <span className="text-[11px] text-muted font-mono">Posted {formatRelative(job.createdAt)}</span>
                       {daysUntil(job.deadline) !== null && (
@@ -280,7 +287,7 @@ export default function ClientDashboardPage() {
                     <p className="text-xs text-muted line-clamp-2">{job.description}</p>
 
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {job.skills.map((s) => (
+                      {job.skills.map((s: string) => (
                         <span
                           key={s}
                           className="px-2 py-0.5 rounded-md bg-background border border-surface-border text-[11px] font-mono text-muted"

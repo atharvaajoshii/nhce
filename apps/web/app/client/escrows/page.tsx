@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Lock, ArrowLeft, CheckCircle2, Clock, Plus, ExternalLink, ShieldCheck, Briefcase } from "lucide-react";
+import { Lock, ArrowLeft, CheckCircle2, Clock, Plus, ExternalLink, ShieldCheck, Briefcase, Trash2 } from "lucide-react";
 import EscrowCard, { EscrowItem } from "../components/EscrowCard";
 
 export default function ClientEscrowsPage() {
@@ -58,6 +58,25 @@ export default function ClientEscrowsPage() {
         }
       }
 
+      // Sync status with milestone submissions saved in localStorage
+      if (typeof window !== "undefined") {
+        combined = combined.map((e) => {
+          if (e.status === "released") return e;
+          try {
+            const savedMsId = localStorage.getItem(`w3hire_project_milestones_${e.id}`);
+            const savedMsTitle = e.projectTitle ? localStorage.getItem(`w3hire_project_milestones_${encodeURIComponent(e.projectTitle)}`) : null;
+            const msArray = savedMsId ? JSON.parse(savedMsId) : (savedMsTitle ? JSON.parse(savedMsTitle) : null);
+            if (Array.isArray(msArray)) {
+              const hasPending = msArray.some((m: any) => m.status === "PENDING_APPROVAL" || m.status === "SUBMITTED" || m.status === "VERIFYING");
+              if (hasPending) {
+                return { ...e, status: "milestone_submitted" as const };
+              }
+            }
+          } catch (err) {}
+          return e;
+        });
+      }
+
       // Filter out stale dummy entries (e.g. amountUSD === 0 && !amountEth)
       const validEscrows = combined.filter((e) => {
         if (!e.projectTitle) return false;
@@ -65,12 +84,22 @@ export default function ClientEscrowsPage() {
         return true;
       });
 
-      // Deduplicate by projectTitle / freelancer pair so only 1 real card is rendered
+      // Deduplicate by projectTitle so only 1 real card per project title is rendered
       const uniqueMap = new Map<string, EscrowItem>();
       for (const item of validEscrows) {
-        const key = `${item.projectTitle}_${item.freelancerName}`.toLowerCase();
-        if (!uniqueMap.has(key) || (item.amountEth && !uniqueMap.get(key)?.amountEth)) {
+        const key = item.projectTitle.trim().toLowerCase();
+        const existing = uniqueMap.get(key);
+        if (!existing) {
           uniqueMap.set(key, item);
+        } else {
+          const isBetter =
+            (item.escrowAddress && !existing.escrowAddress) ||
+            (item.status === "milestone_submitted" && existing.status !== "milestone_submitted") ||
+            (item.freelancerName !== "Freelancer" && existing.freelancerName === "Freelancer") ||
+            (item.amountEth && !existing.amountEth);
+          if (isBetter) {
+            uniqueMap.set(key, item);
+          }
         }
       }
 
@@ -78,6 +107,14 @@ export default function ClientEscrowsPage() {
     };
 
     loadEscrows();
+    window.addEventListener("w3hire_milestones_updated", loadEscrows);
+    window.addEventListener("w3hire_projects_updated", loadEscrows);
+    window.addEventListener("storage", loadEscrows);
+    return () => {
+      window.removeEventListener("w3hire_milestones_updated", loadEscrows);
+      window.removeEventListener("w3hire_projects_updated", loadEscrows);
+      window.removeEventListener("storage", loadEscrows);
+    };
   }, []);
 
   const handleRelease = (id: string) => {
@@ -88,11 +125,20 @@ export default function ClientEscrowsPage() {
     }
   };
 
+  const handleClearEscrows = () => {
+    if (!window.confirm("Delete all test project and escrow records?")) return;
+    setEscrows([]);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("w3hire_client_escrows");
+      localStorage.removeItem("w3hire_client_projects");
+      localStorage.removeItem("w3hire_freelancer_projects");
+      localStorage.removeItem("w3hire_freelancer_applications");
+      window.dispatchEvent(new Event("w3hire_projects_updated"));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-transparent text-foreground flex flex-col selection:bg-moss selection:text-background">
-      
-      
-
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -105,13 +151,24 @@ export default function ClientEscrowsPage() {
             </p>
           </div>
 
-          <Link
-            href="/client/create-escrow"
-            className="px-4 py-2.5 rounded-xl bg-moss hover:bg-[#BEF264] text-background text-xs font-semibold flex items-center gap-2 shadow-md"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Custom Escrow</span>
-          </Link>
+          <div className="flex items-center gap-3">
+            {escrows.length > 0 && (
+              <button
+                onClick={handleClearEscrows}
+                className="px-3.5 py-2.5 rounded-xl bg-surface border border-surface-border hover:border-[#EF4444]/50 text-[#EF4444] text-xs font-semibold flex items-center gap-1.5 transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete All Test Escrows</span>
+              </button>
+            )}
+            <Link
+              href="/client/create-escrow"
+              className="px-4 py-2.5 rounded-xl bg-moss hover:bg-[#BEF264] text-background text-xs font-semibold flex items-center gap-2 shadow-md"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Custom Escrow</span>
+            </Link>
+          </div>
         </div>
 
         {escrows.length === 0 ? (

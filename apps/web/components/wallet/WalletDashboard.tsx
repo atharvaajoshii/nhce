@@ -192,6 +192,29 @@ export default function WalletDashboard() {
       }
     }
 
+    // Include local storage payouts (w3hire_freelancer_payouts) for real-time wallet tracking
+    if (typeof window !== "undefined") {
+      try {
+        const savedPayouts = localStorage.getItem("w3hire_freelancer_payouts");
+        if (savedPayouts) {
+          const payoutsList = JSON.parse(savedPayouts);
+          payoutsList.forEach((p: any) => {
+            const pAmt = parseFloat(p.amount) || 0;
+            calculatedSpentEarned += pAmt;
+            activityList.unshift({
+              id: p.id || `payout-${Date.now()}`,
+              jobTitle: p.jobTitle ? `${p.jobTitle} - ${p.milestoneTitle || 'Milestone'}` : "Milestone Payout Released",
+              escrowAddress: p.txHash ? `${p.txHash.slice(0, 6)}...${p.txHash.slice(-4)}` : "0xC65457eC28A9609Ee11AB4A01aa8322E8c571b62",
+              role: "FREELANCER",
+              amountEth: `${pAmt.toFixed(2)} ${p.tokenSymbol || "USDC"}`,
+              status: "PAID TO WALLET",
+              updatedAt: p.releasedAt || new Date().toISOString()
+            });
+          });
+        }
+      } catch (err) {}
+    }
+
     setEscrowedFunds(calculatedEscrow);
     setAvailableToWithdraw(calculatedWithdraw);
     setTotalSpentOrEarned(calculatedSpentEarned);
@@ -208,6 +231,17 @@ export default function WalletDashboard() {
   useEffect(() => {
     fetchWeb3Balance();
     fetchEscrowMetrics();
+
+    const handleWalletSync = () => {
+      fetchEscrowMetrics();
+    };
+
+    window.addEventListener("w3hire_wallet_updated", handleWalletSync);
+    window.addEventListener("storage", handleWalletSync);
+    return () => {
+      window.removeEventListener("w3hire_wallet_updated", handleWalletSync);
+      window.removeEventListener("storage", handleWalletSync);
+    };
   }, [fetchWeb3Balance, fetchEscrowMetrics]);
 
   return (

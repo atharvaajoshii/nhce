@@ -26,25 +26,89 @@ export default function ProjectsPage() {
   );
 
   const projects = useMemo(() => {
+    const list: any[] = [];
+
+    // 1. API backend assigned projects
     if (apiProjectsData && Array.isArray(apiProjectsData.jobs)) {
-      return apiProjectsData.jobs.map((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status === "IN_PROGRESS" ? "In Progress" : j.status === "COMPLETED" ? "Completed" : "In Progress",
-        budget: `${j.budget} ${j.tokenSymbol || "ETH"}`,
-        rawBudget: j.budget,
-        clientName: j.client?.name || "Client",
-        freelancerName: j.freelancer?.name || "Unassigned",
-        lastUpdated: new Date(j.updatedAt).toLocaleDateString(),
-        isMine: true,
-        tags: j.skills || ["Web3", "Smart Contracts"],
-        durationWeeks: 4,
-        nextMilestone: (j.milestones?.[0] as { title?: string } | undefined)?.title || "Milestone 1: Deliverable Proof Submission",
-      }));
+      apiProjectsData.jobs.forEach((j) => {
+        list.push({
+          id: j.id,
+          title: j.title,
+          status: j.status === "IN_PROGRESS" ? "In Progress" : j.status === "COMPLETED" ? "Completed" : "In Progress",
+          budget: `${j.budget} ${j.tokenSymbol || "ETH"}`,
+          rawBudget: j.budget,
+          clientName: j.client?.name || "Client",
+          freelancerName: j.freelancer?.name || "Assigned Freelancer",
+          lastUpdated: new Date(j.updatedAt).toLocaleDateString(),
+          isMine: true,
+          tags: j.skills?.length ? j.skills : ["Web3", "Smart Contracts"],
+          durationWeeks: 4,
+          nextMilestone: (j.milestones?.[0] as any)?.title || "Milestone 1: Deliverable Proof Submission",
+        });
+      });
     }
 
-    // Local demo / fallback mode
-    return mockProjects.filter((p) => p.isMine);
+    // 2. Real escrows / hired contracts from LocalStorage
+    if (typeof window !== "undefined") {
+      try {
+        const savedEscrows = localStorage.getItem("w3hire_client_escrows");
+        if (savedEscrows) {
+          const escrows = JSON.parse(savedEscrows);
+          escrows.forEach((e: any) => {
+            if (!list.some((existing) => existing.title === e.projectTitle || existing.id === e.id)) {
+              const numBudget = parseFloat(String(e.amountEth || "")) || e.amountUSD || 1000;
+              const symbol = e.tokenSymbol || "USDC";
+              list.push({
+                id: e.id,
+                title: e.projectTitle || "Smart Contract Escrow Project",
+                status: e.status === "released" ? "Completed" : "In Progress",
+                budget: `${numBudget} ${symbol}`,
+                rawBudget: numBudget,
+                clientName: "Client Owner",
+                freelancerName: e.freelancerName || "Freelancer",
+                lastUpdated: "Recently",
+                isMine: true,
+                tags: ["Smart Contracts", "Escrow Vault"],
+                durationWeeks: 4,
+                nextMilestone: "Milestone 1: Architecture & Specification",
+              });
+            }
+          });
+        }
+
+        const savedProjects = localStorage.getItem("w3hire_client_projects");
+        if (savedProjects) {
+          const localProjects = JSON.parse(savedProjects);
+          localProjects.forEach((p: any) => {
+            if (p.status === "in_progress" && !list.some((existing) => existing.title === p.title || existing.id === p.id)) {
+              const numBudget = p.budget || p.budgetUSD || 1000;
+              const symbol = p.tokenSymbol || "USDC";
+              list.push({
+                id: p.id,
+                title: p.title,
+                status: "In Progress",
+                budget: `${numBudget} ${symbol}`,
+                rawBudget: numBudget,
+                clientName: "Client Owner",
+                freelancerName: "Freelancer",
+                lastUpdated: new Date(p.createdAt || Date.now()).toLocaleDateString(),
+                isMine: true,
+                tags: p.skills?.length ? p.skills : ["Web3"],
+                durationWeeks: 4,
+                nextMilestone: "Milestone 1: Architecture & Specification",
+              });
+            }
+          });
+        }
+      } catch (err) {}
+    }
+
+    // Return empty list if no active projects exist
+    if (list.length === 0) {
+      return [];
+    }
+
+    return list;
   }, [apiProjectsData]);
 
   const availableTags = useMemo(() => {

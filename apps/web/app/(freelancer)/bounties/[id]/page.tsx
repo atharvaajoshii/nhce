@@ -16,7 +16,10 @@ import {
   XCircle,
   AlertCircle,
   Briefcase,
+  Layers,
+  FileText,
 } from "lucide-react";
+import InteractiveMilestoneTimeline from "@/components/milestones/InteractiveMilestoneTimeline";
 import EmptyState from "@/components/ui/EmptyState";
 import AuthModal from "@/components/auth/AuthModal";
 import MetaMaskModal from "@/components/metamask-modal";
@@ -465,10 +468,110 @@ export default function BountyDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-12">
+          {/* Project Description */}
           <div>
             <h3 className="text-2xl font-bold text-foreground mb-6 tracking-tight">Project Description</h3>
             <p className="text-muted leading-relaxed font-light whitespace-pre-line">{job.description}</p>
           </div>
+
+          {/* Dynamic Milestones Breakdown & Deliverable Instructions */}
+          {(() => {
+            const raw = (job as any).milestones || (job as any).milestoneList || [];
+            let milestonesList: Array<{
+              id: string;
+              order: number;
+              title: string;
+              description: string;
+              amount: number | string;
+              status: string;
+            }> = [];
+
+            if (Array.isArray(raw) && raw.length > 0) {
+              milestonesList = raw.map((m: any, idx: number) => ({
+                id: m.id || `m-${idx + 1}`,
+                order: m.order || idx + 1,
+                title: m.title || `Milestone ${idx + 1}`,
+                description: m.description || "Deliverable instructions and handoff criteria.",
+                amount: m.amount || (job.budget / raw.length).toFixed(2),
+                status: m.status || (idx === 0 ? "IN_PROGRESS" : "LOCKED")
+              }));
+            } else {
+              const third = (job.budget / 3).toFixed(2);
+              milestonesList = [
+                { id: "m-1", order: 1, title: "Milestone 1: Architecture & Specification", description: "Design specs, architecture diagrams, and interface definitions.", amount: third, status: "IN_PROGRESS" },
+                { id: "m-2", order: 2, title: "Milestone 2: Core Feature Implementation", description: "Development, unit tests, and smart contract integration.", amount: third, status: "LOCKED" },
+                { id: "m-3", order: 3, title: "Milestone 3: Security Audit & Final Deployment", description: "Security audit verification, live deployment, and handoff.", amount: third, status: "LOCKED" }
+              ];
+            }
+
+            return (
+              <div className="space-y-6 pt-6 border-t border-surface-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-extrabold text-foreground tracking-tight flex items-center gap-2">
+                      <Layers className="w-5 h-5 text-moss" />
+                      <span>Project Milestones & Deliverables</span>
+                    </h3>
+                    <p className="text-xs text-muted mt-1">Review the agreed milestone values, instructions, and payout structure.</p>
+                  </div>
+                  <span className="text-xs font-mono text-moss bg-moss/10 px-3 py-1 rounded-full border border-moss/30 font-semibold">
+                    {milestonesList.length} {milestonesList.length === 1 ? "Milestone" : "Milestones"}
+                  </span>
+                </div>
+
+                <InteractiveMilestoneTimeline
+                  milestones={milestonesList as any}
+                  tokenSymbol={job.tokenSymbol || "USDC"}
+                />
+
+                <div className="space-y-4 pt-2">
+                  {milestonesList.map((m, idx) => {
+                    const pct = Math.round((Number(m.amount) / job.budget) * 100) || Math.round(100 / milestonesList.length);
+                    return (
+                      <div key={m.id || idx} className="p-5 rounded-2xl bg-surface border border-surface-border hover:border-moss/40 transition space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-surface-border pb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-moss/10 border border-moss/30 flex items-center justify-center font-bold text-xs text-moss font-mono">
+                              #{m.order || idx + 1}
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-bold text-foreground">{m.title}</h4>
+                              <span className="text-[11px] font-mono text-muted">Allocation: {pct}% of total budget</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right font-mono">
+                              <span className="text-sm font-extrabold text-moss">{m.amount} {job.tokenSymbol || "USDC"}</span>
+                            </div>
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase font-semibold border ${
+                              m.status === "COMPLETED"
+                                ? "bg-moss/20 text-moss border-moss/30"
+                                : m.status === "IN_PROGRESS"
+                                ? "bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/30"
+                                : "bg-background text-muted border-surface-border"
+                            }`}>
+                              {m.status.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-mono uppercase font-semibold text-muted flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-moss" />
+                            What To Do / Deliverable Instructions:
+                          </span>
+                          <div className="p-3.5 rounded-xl bg-background border border-surface-border text-xs text-foreground leading-relaxed whitespace-pre-line">
+                            {m.description || "Deliverable specifications and verification criteria agreed for this milestone."}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Sidebar */}

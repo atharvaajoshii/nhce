@@ -315,18 +315,19 @@ export function fetchMyProjects(token: string): Promise<{ jobs: Job[] }> {
 export function submitMilestoneProof(
   token: string,
   milestoneId: string,
-  data: { deliverableLink?: string; githubPrUrl?: string; deploymentUrl?: string }
-): Promise<{ message: string; milestone: Milestone }> {
-  return apiFetch<{ message: string; milestone: Milestone }>(`/milestones/${milestoneId}/submit`, {
+  data: { deliverableLink?: string; githubPrUrl?: string; deploymentUrl?: string; jobId?: string; milestoneNum?: number }
+): Promise<{ message: string; milestone: any }> {
+  return apiFetch<{ message: string; milestone: any }>(`/milestones/${milestoneId}/submit`, {
     method: "POST",
     token,
     body: JSON.stringify(data),
   });
 }
 
-export function verifyMilestoneOracle(
-  token: string,
-  milestoneId: string
+export async function verifyMilestoneOracle(
+  token: string | null,
+  milestoneId: string,
+  data?: { jobId?: string; milestoneNum?: number; geminiApiKey?: string }
 ): Promise<{
   message: string;
   milestone: Milestone;
@@ -335,19 +336,42 @@ export function verifyMilestoneOracle(
   status: string;
   pipelineResults: unknown;
 }> {
-  return apiFetch(`/oracle/milestone/${milestoneId}/verify`, {
-    method: "POST",
-    token,
-  });
+  try {
+    return await apiFetch<any>(`/oracle/milestone/${milestoneId}/verify`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data || {}),
+    });
+  } catch (err: any) {
+    return await apiFetch<any>(`/milestones/${milestoneId}/verify`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data || {}),
+    });
+  }
 }
 
 export function releaseMilestonePayment(
   token: string,
-  milestoneId: string
-): Promise<{ message: string; milestone: Milestone; txHash?: string }> {
-  return apiFetch<{ message: string; milestone: Milestone; txHash?: string }>(`/milestones/${milestoneId}/release`, {
+  milestoneId: string,
+  data?: { jobId?: string; milestoneNum?: number }
+): Promise<{ message: string; milestone: any; txHash?: string }> {
+  return apiFetch<{ message: string; milestone: any; txHash?: string }>(`/milestones/${milestoneId}/release`, {
     method: "POST",
     token,
+    body: JSON.stringify(data || {}),
+  });
+}
+
+export function rejectMilestone(
+  token: string,
+  milestoneId: string,
+  data: { reason: string; jobId?: string; milestoneNum?: number }
+): Promise<{ message: string; milestone: any }> {
+  return apiFetch<{ message: string; milestone: any }>(`/milestones/${milestoneId}/reject`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(data),
   });
 }
 

@@ -85,7 +85,12 @@ export default function Navbar() {
     { name: "Wallet", href: "/wallet" },
   ];
 
-  const navLinks = !user
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const navLinks = !mounted || !user
     ? unauthenticatedNavLinks
     : user.role === "CLIENT"
     ? clientNavLinks

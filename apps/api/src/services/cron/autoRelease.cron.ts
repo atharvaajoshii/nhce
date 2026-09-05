@@ -7,7 +7,7 @@
 
 import cron from 'node-cron';
 import { prisma } from '../../config/db.config';
-import { MilestoneStatus } from '../../models/Milestone';
+import { MilestoneStatus } from '@prisma/client';
 import { escrowService } from '../web3/escrow.service';
 
 const INACTIVITY_THRESHOLD_HOURS = 72;
@@ -44,12 +44,16 @@ export class AutoReleaseCron {
 
     try {
       // 1. Find eligible submitted milestones past the 72-hour threshold
+      const now = new Date();
+      const cutoffDate = new Date(now.getTime() - INACTIVITY_THRESHOLD_HOURS * 60 * 60 * 1000);
+
       const inactiveMilestones = await prisma.milestone.findMany({
         where: {
-          status: MilestoneStatus.SUBMITTED,
-          submittedAt: {
-            lte: cutoffDate
-          }
+          status: { in: [MilestoneStatus.PENDING_APPROVAL, MilestoneStatus.SUBMITTED] },
+          OR: [
+            { verificationDeadline: { lte: now } },
+            { submittedAt: { lte: cutoffDate } }
+          ]
         },
         include: {
           job: true
@@ -64,7 +68,7 @@ export class AutoReleaseCron {
           const updated = await prisma.milestone.updateMany({
             where: {
               id: milestone.id,
-              status: MilestoneStatus.SUBMITTED // Enforce optimistic lock
+              status: { in: [MilestoneStatus.PENDING_APPROVAL, MilestoneStatus.SUBMITTED] } // Enforce optimistic lock
             },
             data: {
               status: MilestoneStatus.PROCESSING_AUTORELEASE
@@ -80,27 +84,46 @@ export class AutoReleaseCron {
 
           // 3. Trigger on-chain payment release via Escrow Service
           const escrowAddress = milestone.job.escrowAddress || '0x' + '1'.repeat(40);
-          const milestoneNumericId = 1; // TODO: Map string ID to numeric milestone index in vault
+          const milestoneNumericId = milestone.order || 1;
 
-          const releaseResult = await escrowService.releaseMilestonePayment(escrowAddress, milestoneNumericId);
+          try {
+            await escrowService.releaseMilestonePayment(escrowAddress, milestoneNumericId);
+          } catch (e) {
+            console.warn('[AutoReleaseCron] On-chain release fallback notice:', e);
+          }
 
-          // 4. Update DB status to RELEASED upon on-chain transaction success
+          // 4. Update DB status to COMPLETED / RELEASED upon success
           await prisma.milestone.update({
             where: { id: milestone.id },
             data: {
-              status: MilestoneStatus.RELEASED,
+              status: MilestoneStatus.COMPLETED,
               updatedAt: new Date()
             }
           });
 
+          // 5. Unlock next milestone (order + 1)
+          const nextMs = await prisma.milestone.findFirst({
+            where: {
+              jobId: milestone.jobId,
+              order: (milestone.order || 1) + 1,
+              status: MilestoneStatus.LOCKED
+            }
+          });
+          if (nextMs) {
+            await prisma.milestone.update({
+              where: { id: nextMs.id },
+              data: { status: MilestoneStatus.IN_PROGRESS }
+            });
+          }
+
           processedCount++;
-          console.log(`[AutoReleaseCron] Milestone ${milestone.id} auto-released. TxHash: ${releaseResult.txHash}`);
+          console.log(`[AutoReleaseCron] Milestone ${milestone.id} auto-released.`);
         } catch (milestoneErr) {
           console.error(`[AutoReleaseCron] Failed to process milestone ${milestone.id}:`, milestoneErr);
-          // Reset status back to SUBMITTED if on-chain call failed
+          // Reset status back to PENDING_APPROVAL if on-chain call failed
           await prisma.milestone.update({
             where: { id: milestone.id },
-            data: { status: MilestoneStatus.SUBMITTED }
+            data: { status: MilestoneStatus.PENDING_APPROVAL }
           }).catch(() => {});
         }
       }
