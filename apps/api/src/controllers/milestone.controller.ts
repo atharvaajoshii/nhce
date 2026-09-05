@@ -253,7 +253,11 @@ export class MilestoneController {
 
       // 3. Gemini AI Code Reviewer
       const taskRequirements = `${milestone.job.title} - ${milestone.title}: ${milestone.description}`;
-      const deliverableSummary = `GitHub PR: ${milestone.githubPrUrl || 'N/A'}, Deployment: ${milestone.deploymentUrl || 'N/A'}, Notes: ${milestone.deliverableNotes || milestone.deliverableLink || 'N/A'}`;
+      const deliverableSummary = [
+        milestone.githubPrUrl ? `GitHub PR: ${milestone.githubPrUrl}` : '',
+        milestone.deploymentUrl ? `Deployment: ${milestone.deploymentUrl}` : '',
+        milestone.deliverableNotes || milestone.deliverableLink ? `Notes: ${milestone.deliverableNotes || milestone.deliverableLink}` : ''
+      ].filter(Boolean).join('\n');
 
       const aiReviewResult = await codeReviewerAI.evaluateDeliverable(taskRequirements, deliverableSummary, customKey);
 

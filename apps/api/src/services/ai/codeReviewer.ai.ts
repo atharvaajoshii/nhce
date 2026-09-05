@@ -35,9 +35,12 @@ export class CodeReviewerAI {
     customApiKey?: string
   ): Promise<IAICodeReviewResult> {
     try {
-      // 1. Extract URLs from deliverable content
+      // 1. Extract URLs from deliverable content and sanitize trailing punctuation (e.g. commas, periods)
       const urlRegex = /(https?:\/\/[^\s]+)/g;
-      const extractedUrls = deliverableContent.match(urlRegex) || [];
+      const rawUrls = deliverableContent.match(urlRegex) || [];
+      const extractedUrls = rawUrls
+        .map((u) => u.replace(/[,.;:)>\]\}'"]+$/, '').trim())
+        .filter((u) => u.length > 0);
 
       let urlVerificationDetails = "No external URLs detected.";
       let urlPingSuccess = true;
@@ -54,7 +57,7 @@ export class CodeReviewerAI {
         fetchedContentSnippet = pingResult.contentSnippet || "";
       } else {
         // If content does not contain http(s)://, check if raw string looks like a domain or URL
-        const trimmed = deliverableContent.trim();
+        const trimmed = deliverableContent.trim().replace(/[,.;:)>\]\}'"]+$/, '');
         if (trimmed.includes('.') && !trimmed.includes(' ') && trimmed.length > 4) {
           primaryUrl = `https://${trimmed}`;
           const pingResult = await deploymentOracle.verifyDeployment(primaryUrl);
