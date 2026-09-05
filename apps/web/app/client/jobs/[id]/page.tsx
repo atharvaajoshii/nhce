@@ -372,8 +372,8 @@ export default function ClientJobDetailPage() {
       let recommendationsList: string[] = ["Proceed with milestone review."];
       let isScopeMatching = true;
 
-      if (apiRes.pipelineResults?.aiReviewer) {
-        const rev = apiRes.pipelineResults.aiReviewer;
+      if (apiRes.pipelineResults && (apiRes.pipelineResults as any).aiReviewer) {
+        const rev = (apiRes.pipelineResults as any).aiReviewer;
         if (rev.score !== undefined) resultScore = rev.score;
         if (rev.summary) summaryText = rev.summary;
         if (Array.isArray(rev.keyFindings)) keyFindingsList = rev.keyFindings;

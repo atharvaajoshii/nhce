@@ -1,23 +1,12 @@
 "use client";
 
-<<<<<<< HEAD
-import { useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
-=======
 import { useState, useEffect } from "react";
-import { Loader2, Plus, X, Trash2, Trophy, DollarSign, Percent, AlertCircle, CheckCircle2 } from "lucide-react";
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
+import { Loader2, Plus, Trash2, Trophy, DollarSign, Percent, AlertCircle, CheckCircle2 } from "lucide-react";
 import { TOKEN_OPTIONS } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import WalletNoticeBanner from "@/components/ui/WalletNoticeBanner";
 import MetaMaskModal from "@/components/metamask-modal";
 import SkillsPicker from "@/components/ui/SkillsPicker";
-
-export interface JobMilestoneInput {
-  title: string;
-  description: string;
-  amount: string;
-}
 
 export interface FormMilestone {
   id?: string;
@@ -34,12 +23,8 @@ export interface JobFormValues {
   budget: string;
   tokenSymbol: string;
   deadline: string;
-<<<<<<< HEAD
-  milestones: JobMilestoneInput[];
-=======
   allocationMode?: "EQUAL" | "CUSTOM";
   milestones: FormMilestone[];
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
 }
 
 interface JobFormProps {
@@ -48,21 +33,14 @@ interface JobFormProps {
   isSubmitting?: boolean;
   error?: string | null;
   onSubmit: (status: "DRAFT" | "PUBLISHED", values: JobFormValues) => void;
-  /** Milestones can only be set at job-creation time — the backend has no
-   *  endpoint to add/edit milestones on an already-created job. Pass false
-   *  on the edit form so it isn't shown where it can't take effect. */
   allowMilestones?: boolean;
 }
 
-<<<<<<< HEAD
-const EMPTY_MILESTONE: JobMilestoneInput = { title: "", description: "", amount: "" };
-=======
 const DEFAULT_MILESTONES: FormMilestone[] = [
   { order: 1, title: "Milestone 1: Architecture & Specs", description: "System architecture, UI design, and interface specifications.", amount: "100" },
   { order: 2, title: "Milestone 2: Core Development", description: "Frontend and backend core feature implementation.", amount: "100" },
   { order: 3, title: "Milestone 3: Final Deployment & Review", description: "Testing, deployment verification, and handoff.", amount: "100" },
 ];
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
 
 const EMPTY: JobFormValues = {
   title: "",
@@ -71,12 +49,8 @@ const EMPTY: JobFormValues = {
   budget: "300",
   tokenSymbol: "USDC",
   deadline: "",
-<<<<<<< HEAD
-  milestones: [],
-=======
   allocationMode: "EQUAL",
   milestones: DEFAULT_MILESTONES,
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
 };
 
 export default function JobForm({
@@ -87,6 +61,7 @@ export default function JobForm({
   onSubmit,
   allowMilestones = true,
 }: JobFormProps) {
+  const { user } = useAuth();
   const [values, setValues] = useState<JobFormValues>({
     ...EMPTY,
     ...initialValues,
@@ -96,7 +71,6 @@ export default function JobForm({
   const [allocationMode, setAllocationMode] = useState<"EQUAL" | "CUSTOM">(
     initialValues?.allocationMode || "EQUAL"
   );
-  const [skillInput, setSkillInput] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
 
@@ -196,31 +170,6 @@ export default function JobForm({
     setValues((v) => ({ ...v, milestones: updated }));
   };
 
-  const addSkill = (raw: string) => {
-    const skill = raw.trim().replace(/,$/, "");
-    if (!skill) return;
-    if (values.skills.some((s) => s.toLowerCase() === skill.toLowerCase())) {
-      setSkillInput("");
-      return;
-    }
-    set("skills", [...values.skills, skill]);
-    setSkillInput("");
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
-  };
-
-  const removeMilestone = (index: number) => {
-    setValues((v) => ({ ...v, milestones: v.milestones.filter((_, i) => i !== index) }));
-  };
-
-  const updateMilestone = (index: number, key: keyof JobMilestoneInput, value: string) => {
-    setValues((v) => ({
-      ...v,
-      milestones: v.milestones.map((m, i) => (i === index ? { ...m, [key]: value } : m)),
-    }));
-  };
-
-  const milestonesTotal = values.milestones.reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
-
   const getTomorrowString = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -267,13 +216,6 @@ export default function JobForm({
         return "Deadline must be greater than the current date.";
       }
     }
-    if (allowMilestones) {
-      for (const m of values.milestones) {
-        if (!m.title.trim() && !m.amount) continue; // ignore fully-blank rows
-        if (!m.title.trim()) return "Every milestone needs a title.";
-        if (!m.amount || Number(m.amount) <= 0) return "Every milestone needs a positive amount.";
-      }
-    }
     return null;
   };
 
@@ -294,15 +236,7 @@ export default function JobForm({
       title: values.title.trim(),
       description: values.description.trim(),
       budget: String(Number(values.budget)),
-<<<<<<< HEAD
-      milestones: allowMilestones
-        ? values.milestones
-            .filter((m) => m.title.trim() && Number(m.amount) > 0)
-            .map((m) => ({ ...m, title: m.title.trim(), description: m.description.trim() }))
-        : [],
-=======
       allocationMode,
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
     });
   };
 
@@ -401,233 +335,154 @@ export default function JobForm({
         </div>
       </div>
 
-<<<<<<< HEAD
+      {/* DYNAMIC MILESTONE BUILDER SECTION */}
       {allowMilestones && (
-        <div className="space-y-4 pt-2 border-t border-surface-border">
-          <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="pt-6 border-t border-surface-border space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-muted mb-1">
-                Milestones (optional)
-              </label>
-              <p className="text-[11px] text-muted">
-                Split the budget into deliverables the freelancer submits and you release one at a time. Leave empty for a single lump-sum payout — milestones can only be set now, not added later.
+              <div className="flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-moss" />
+                <h3 className="text-base font-extrabold text-foreground tracking-tight">
+                  Dynamic Milestone Builder ({values.milestones.length})
+                </h3>
+              </div>
+              <p className="text-xs text-muted mt-0.5">
+                Define custom milestones. Choose Equal Split or Custom Budget Allocation.
               </p>
             </div>
-            {values.milestones.length > 0 && (
-              <span
-                className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border shrink-0 ${
-                  values.budget && Number(values.budget) === milestonesTotal
-                    ? "bg-moss/10 text-moss border-moss/30"
-                    : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+
+            {/* Allocation Mode Selector */}
+            <div className="flex items-center p-1 rounded-xl bg-background border border-surface-border self-start">
+              <button
+                type="button"
+                onClick={() => setAllocationMode("EQUAL")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${
+                  allocationMode === "EQUAL"
+                    ? "bg-moss text-background shadow"
+                    : "text-muted hover:text-foreground"
                 }`}
               >
-                Milestones total: {milestonesTotal} {values.tokenSymbol} / Budget: {values.budget || 0} {values.tokenSymbol}
-              </span>
-            )}
+                <Percent className="w-3.5 h-3.5" />
+                <span>Equal Split</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllocationMode("CUSTOM")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${
+                  allocationMode === "CUSTOM"
+                    ? "bg-moss text-background shadow"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>Custom Amount</span>
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {values.milestones.map((m, i) => (
-              <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_140px_auto] gap-3 items-start bg-background border border-surface-border rounded-xl p-3.5">
-                <div>
-                  <label className="block text-[10px] font-mono text-muted uppercase mb-1">Title</label>
-                  <input
-                    value={m.title}
-                    onChange={(e) => updateMilestone(i, "title", e.target.value)}
-                    placeholder={`Milestone ${i + 1}`}
-                    className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-moss/60"
-                  />
+          {/* Real-time Allocation Summary Card */}
+          <div className="p-3.5 rounded-xl bg-background border border-surface-border flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className="text-muted">Total Budget:</span>
+              <span className="font-bold text-foreground">{values.budget || "0"} {values.tokenSymbol}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted">Allocated Milestones:</span>
+              <span className={`font-bold ${isAllocationMatch ? "text-moss" : "text-amber-400"}`}>
+                {milestonesSum.toFixed(2)} {values.tokenSymbol}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {isAllocationMatch ? (
+                <span className="text-moss flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Budget 100% Allocated
+                </span>
+              ) : (
+                <span className="text-amber-400 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {totalBudgetNum > milestonesSum
+                    ? `${(totalBudgetNum - milestonesSum).toFixed(2)} Unallocated`
+                    : `${(milestonesSum - totalBudgetNum).toFixed(2)} Over Budget`}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Milestone Cards List */}
+          <div className="space-y-4">
+            {values.milestones.map((ms, idx) => (
+              <div key={idx} className="p-4 rounded-2xl bg-background border border-surface-border space-y-3 relative group">
+                <div className="flex items-center justify-between gap-3 border-b border-surface-border pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-moss/10 border border-moss/30 text-moss font-mono font-bold text-xs flex items-center justify-center">
+                      #{idx + 1}
+                    </span>
+                    <span className="text-xs font-mono font-bold text-foreground uppercase tracking-wider">
+                      Milestone Node #{idx + 1}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 text-xs font-mono">
+                      <span className="text-muted">Amount:</span>
+                      <input
+                        type="number"
+                        disabled={allocationMode === "EQUAL"}
+                        value={ms.amount}
+                        onChange={(e) => handleUpdateMilestone(idx, "amount", e.target.value)}
+                        className="w-24 bg-surface border border-surface-border rounded-lg px-2 py-1 text-right text-xs font-bold text-moss focus:outline-none focus:border-moss disabled:opacity-75"
+                      />
+                      <span className="text-foreground">{values.tokenSymbol}</span>
+                    </div>
+
+                    {values.milestones.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMilestone(idx)}
+                        className="p-1.5 rounded-lg text-muted hover:text-rose-400 hover:bg-rose-950/20 transition cursor-pointer"
+                        title="Remove Milestone"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-mono text-muted uppercase mb-1">Description</label>
-                  <input
-                    value={m.description}
-                    onChange={(e) => updateMilestone(i, "description", e.target.value)}
-                    placeholder="What must be delivered"
-                    className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-moss/60"
-                  />
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  <div className="md:col-span-4">
+                    <input
+                      type="text"
+                      value={ms.title}
+                      onChange={(e) => handleUpdateMilestone(idx, "title", e.target.value)}
+                      placeholder={`Milestone ${idx + 1} Title`}
+                      className="w-full bg-surface border border-surface-border rounded-xl px-3 py-2 text-xs font-semibold text-foreground focus:outline-none focus:border-moss/60"
+                    />
+                  </div>
+                  <div className="md:col-span-8">
+                    <input
+                      type="text"
+                      value={ms.description}
+                      onChange={(e) => handleUpdateMilestone(idx, "description", e.target.value)}
+                      placeholder="Short description of deliverables for this milestone..."
+                      className="w-full bg-surface border border-surface-border rounded-xl px-3 py-2 text-xs text-muted focus:outline-none focus:border-moss/60"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-mono text-muted uppercase mb-1">Amount</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={m.amount}
-                    onChange={(e) => updateMilestone(i, "amount", e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-moss/60"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeMilestone(i)}
-                  className="self-end sm:self-center p-2 rounded-lg text-muted hover:text-[#EF4444] hover:bg-[#EF4444]/10 transition"
-                  title="Remove milestone"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
               </div>
             ))}
           </div>
 
+          {/* Add Milestone Button */}
           <button
             type="button"
-            onClick={addMilestone}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-surface-border text-muted hover:text-foreground hover:border-moss/50 text-xs font-semibold transition"
+            onClick={handleAddMilestone}
+            className="w-full py-3 rounded-2xl bg-surface hover:bg-surface-hover border border-moss/40 text-moss font-bold font-mono text-xs transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
-            Add Milestone
+            <Plus className="w-4 h-4" />
+            <span>Add Milestone (#{values.milestones.length + 1})</span>
           </button>
         </div>
       )}
-=======
-      {/* DYNAMIC MILESTONE BUILDER SECTION */}
-      <div className="pt-6 border-t border-surface-border space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-moss" />
-              <h3 className="text-base font-extrabold text-foreground tracking-tight">
-                Dynamic Milestone Builder ({values.milestones.length})
-              </h3>
-            </div>
-            <p className="text-xs text-muted mt-0.5">
-              Define $N$ custom milestones. Choose Equal Split or Custom Budget Allocation.
-            </p>
-          </div>
-
-          {/* Allocation Mode Selector */}
-          <div className="flex items-center p-1 rounded-xl bg-background border border-surface-border self-start">
-            <button
-              type="button"
-              onClick={() => setAllocationMode("EQUAL")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${
-                allocationMode === "EQUAL"
-                  ? "bg-moss text-background shadow"
-                  : "text-muted hover:text-foreground"
-              }`}
-            >
-              <Percent className="w-3.5 h-3.5" />
-              <span>Equal Split</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setAllocationMode("CUSTOM")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${
-                allocationMode === "CUSTOM"
-                  ? "bg-moss text-background shadow"
-                  : "text-muted hover:text-foreground"
-              }`}
-            >
-              <DollarSign className="w-3.5 h-3.5" />
-              <span>Custom Amount</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Real-time Allocation Summary Card */}
-        <div className="p-3.5 rounded-xl bg-background border border-surface-border flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-          <div className="flex items-center gap-2">
-            <span className="text-muted">Total Budget:</span>
-            <span className="font-bold text-foreground">{values.budget || "0"} {values.tokenSymbol}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-muted">Allocated Milestones:</span>
-            <span className={`font-bold ${isAllocationMatch ? "text-moss" : "text-amber-400"}`}>
-              {milestonesSum.toFixed(2)} {values.tokenSymbol}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {isAllocationMatch ? (
-              <span className="text-moss flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Budget 100% Allocated
-              </span>
-            ) : (
-              <span className="text-amber-400 flex items-center gap-1">
-                <AlertCircle className="w-3.5 h-3.5" />
-                {totalBudgetNum > milestonesSum
-                  ? `${(totalBudgetNum - milestonesSum).toFixed(2)} Unallocated`
-                  : `${(milestonesSum - totalBudgetNum).toFixed(2)} Over Budget`}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Milestone Cards List */}
-        <div className="space-y-4">
-          {values.milestones.map((ms, idx) => (
-            <div key={idx} className="p-4 rounded-2xl bg-background border border-surface-border space-y-3 relative group">
-              <div className="flex items-center justify-between gap-3 border-b border-surface-border pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-moss/10 border border-moss/30 text-moss font-mono font-bold text-xs flex items-center justify-center">
-                    #{idx + 1}
-                  </span>
-                  <span className="text-xs font-mono font-bold text-foreground uppercase tracking-wider">
-                    Milestone Node #{idx + 1}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5 text-xs font-mono">
-                    <span className="text-muted">Amount:</span>
-                    <input
-                      type="number"
-                      disabled={allocationMode === "EQUAL"}
-                      value={ms.amount}
-                      onChange={(e) => handleUpdateMilestone(idx, "amount", e.target.value)}
-                      className="w-24 bg-surface border border-surface-border rounded-lg px-2 py-1 text-right text-xs font-bold text-moss focus:outline-none focus:border-moss disabled:opacity-75"
-                    />
-                    <span className="text-foreground">{values.tokenSymbol}</span>
-                  </div>
-
-                  {values.milestones.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMilestone(idx)}
-                      className="p-1.5 rounded-lg text-muted hover:text-rose-400 hover:bg-rose-950/20 transition cursor-pointer"
-                      title="Remove Milestone"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                <div className="md:col-span-4">
-                  <input
-                    type="text"
-                    value={ms.title}
-                    onChange={(e) => handleUpdateMilestone(idx, "title", e.target.value)}
-                    placeholder={`Milestone ${idx + 1} Title`}
-                    className="w-full bg-surface border border-surface-border rounded-xl px-3 py-2 text-xs font-semibold text-foreground focus:outline-none focus:border-moss/60"
-                  />
-                </div>
-                <div className="md:col-span-8">
-                  <input
-                    type="text"
-                    value={ms.description}
-                    onChange={(e) => handleUpdateMilestone(idx, "description", e.target.value)}
-                    placeholder="Short description of deliverables for this milestone..."
-                    className="w-full bg-surface border border-surface-border rounded-xl px-3 py-2 text-xs text-muted focus:outline-none focus:border-moss/60"
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Add Milestone Button */}
-        <button
-          type="button"
-          onClick={handleAddMilestone}
-          className="w-full py-3 rounded-2xl bg-surface hover:bg-surface-hover border border-moss/40 text-moss font-bold font-mono text-xs transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Milestone (#{values.milestones.length + 1})</span>
-        </button>
-      </div>
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
 
       {(validationError || error) && (
         <div className="p-3.5 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-xs text-[#EF4444]">
