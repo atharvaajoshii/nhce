@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, SlidersHorizontal, AlertCircle, Loader2, RotateCcw } from "lucide-react";
 import JobCard from "@/components/JobCard";
@@ -59,19 +59,21 @@ export default function BountiesPage() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          localProjects = parsed.map((p: any) => ({
-            id: p.id,
-            title: p.title,
-            description: p.description,
-            budget: p.budgetUSD || p.budget || 2000,
-            tokenSymbol: p.tokenSymbol || "ETH",
-            skills: p.skills || [],
-            status: "PUBLISHED" as const,
-            createdAt: p.createdAt || new Date().toISOString(),
-            updatedAt: p.createdAt || new Date().toISOString(),
-            client: { id: "c1", name: "Client", email: "client@w3hire.io", rating: 5 },
-            _count: { applications: p.applicants?.length || 0 },
-          }));
+          localProjects = parsed
+            .filter((p: any) => p.status !== "DRAFT" && p.status !== "draft")
+            .map((p: any) => ({
+              id: p.id,
+              title: p.title,
+              description: p.description,
+              budget: p.budgetUSD || p.budget || 2000,
+              tokenSymbol: p.tokenSymbol || "ETH",
+              skills: p.skills || [],
+              status: "PUBLISHED" as const,
+              createdAt: p.createdAt || new Date().toISOString(),
+              updatedAt: p.createdAt || new Date().toISOString(),
+              client: { id: "c1", name: "Client", email: "client@w3hire.io", rating: 5 },
+              _count: { applications: p.applicants?.length || 0 },
+            }));
         } catch (e) {}
       }
     }
@@ -86,6 +88,16 @@ export default function BountiesPage() {
     return merged;
   });
   const jobs = useMemo(() => jobsData ?? [], [jobsData]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      loadJobs();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("w3hire_projects_updated", handleUpdate);
+      return () => window.removeEventListener("w3hire_projects_updated", handleUpdate);
+    }
+  }, [loadJobs]);
 
   const availableSkills = useMemo(() => {
     return Array.from(new Set(jobs.flatMap((j) => j.skills))).sort((a, b) => a.localeCompare(b));

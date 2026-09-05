@@ -44,7 +44,7 @@ export default function NewJobPage() {
       skills: values.skills || [],
       milestones: formattedMilestones,
       duration: "4 weeks",
-      status: status === "PUBLISHED" ? "open" : "draft",
+      status: status === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       applicants: [],
