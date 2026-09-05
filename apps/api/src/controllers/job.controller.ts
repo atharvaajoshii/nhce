@@ -704,7 +704,15 @@ export class JobController {
       }
 
       const id = String(req.params.id);
-      const job = await prisma.job.findUnique({ where: { id } });
+      const job = await prisma.job.findUnique({
+        where: { id },
+        include: {
+          client: { select: { id: true, name: true, email: true, rating: true, walletAddress: true } },
+          freelancer: { select: { id: true, name: true, email: true, rating: true, walletAddress: true } },
+          milestones: { orderBy: { order: 'asc' } },
+          _count: { select: { applications: true } }
+        }
+      });
       if (!job) {
         res.status(404).json({ error: 'Job not found' });
         return;

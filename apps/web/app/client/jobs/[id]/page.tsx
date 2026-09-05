@@ -153,7 +153,12 @@ export default function ClientJobDetailPage() {
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
-            const match = parsed.find((p: any) => p.id === id);
+            const match = parsed.find((p: any) =>
+              p.id === id ||
+              p.id === decodeURIComponent(id) ||
+              (p.title && encodeURIComponent(p.title) === id) ||
+              (p.title && p.title.toLowerCase() === id.toLowerCase())
+            );
             if (match) {
               const fallbackJob: Job = {
                 id: match.id,
@@ -162,11 +167,12 @@ export default function ClientJobDetailPage() {
                 budget: match.budgetUSD || match.budget || 2000,
                 tokenSymbol: match.tokenSymbol || "ETH",
                 skills: match.skills || [],
+                milestones: match.milestones || [],
                 deadline: null,
                 escrowAddress: null,
                 clientId: "c1",
                 freelancerId: null,
-                status: match.status === "in_progress" ? "IN_PROGRESS" : match.status === "open" ? "PUBLISHED" : "DRAFT",
+                status: match.status === "in_progress" ? "IN_PROGRESS" : match.status === "PUBLISHED" || match.status === "open" ? "PUBLISHED" : "DRAFT",
                 createdAt: match.createdAt || new Date().toISOString(),
                 updatedAt: match.createdAt || new Date().toISOString(),
                 client: { id: "c1", name: "Client", email: "client@w3hire.io", rating: 5 },

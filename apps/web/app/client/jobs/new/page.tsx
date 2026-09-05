@@ -54,7 +54,12 @@ export default function NewJobPage() {
     try {
       const existing = JSON.parse(localStorage.getItem("w3hire_client_projects") || "[]");
       localStorage.setItem("w3hire_client_projects", JSON.stringify([newJobObj, ...existing]));
+      localStorage.setItem(`w3hire_project_milestones_${newJobId}`, JSON.stringify(formattedMilestones));
+      if (values.title) {
+        localStorage.setItem(`w3hire_project_milestones_${encodeURIComponent(values.title)}`, JSON.stringify(formattedMilestones));
+      }
       window.dispatchEvent(new Event("w3hire_projects_updated"));
+      window.dispatchEvent(new Event("w3hire_milestones_updated"));
     } catch (e) {
       console.error(e);
     }
@@ -73,6 +78,21 @@ export default function NewJobPage() {
           status,
         });
         if (res && res.job && res.job.id) {
+          try {
+            const existing = JSON.parse(localStorage.getItem("w3hire_client_projects") || "[]");
+            const updatedProjects = existing.map((p: any) => p.id === newJobId ? { ...p, id: res.job.id } : p);
+            if (!updatedProjects.some((p: any) => p.id === res.job.id)) {
+              updatedProjects.unshift({ ...newJobObj, id: res.job.id });
+            }
+            localStorage.setItem("w3hire_client_projects", JSON.stringify(updatedProjects));
+            localStorage.setItem(`w3hire_project_milestones_${res.job.id}`, JSON.stringify(formattedMilestones));
+            if (res.job.title) {
+              localStorage.setItem(`w3hire_project_milestones_${encodeURIComponent(res.job.title)}`, JSON.stringify(formattedMilestones));
+            }
+            window.dispatchEvent(new Event("w3hire_projects_updated"));
+            window.dispatchEvent(new Event("w3hire_milestones_updated"));
+          } catch (err) {}
+
           router.push(`/client/jobs/${res.job.id}`);
           return;
         }
