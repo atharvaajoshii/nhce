@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { TOKEN_OPTIONS } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import WalletNoticeBanner from "@/components/ui/WalletNoticeBanner";
 import MetaMaskModal from "@/components/metamask-modal";
 import SkillsPicker from "@/components/ui/SkillsPicker";
+
+export interface JobMilestoneInput {
+  title: string;
+  description: string;
+  amount: string;
+}
 
 export interface JobFormValues {
   title: string;
@@ -15,6 +21,7 @@ export interface JobFormValues {
   budget: string;
   tokenSymbol: string;
   deadline: string;
+  milestones: JobMilestoneInput[];
 }
 
 interface JobFormProps {
@@ -23,7 +30,13 @@ interface JobFormProps {
   isSubmitting?: boolean;
   error?: string | null;
   onSubmit: (status: "DRAFT" | "PUBLISHED", values: JobFormValues) => void;
+  /** Milestones can only be set at job-creation time — the backend has no
+   *  endpoint to add/edit milestones on an already-created job. Pass false
+   *  on the edit form so it isn't shown where it can't take effect. */
+  allowMilestones?: boolean;
 }
+
+const EMPTY_MILESTONE: JobMilestoneInput = { title: "", description: "", amount: "" };
 
 const EMPTY: JobFormValues = {
   title: "",
@@ -32,9 +45,17 @@ const EMPTY: JobFormValues = {
   budget: "",
   tokenSymbol: "USDC",
   deadline: "",
+  milestones: [],
 };
 
-export default function JobForm({ initialValues, submitLabel = "Create Job", isSubmitting, error, onSubmit }: JobFormProps) {
+export default function JobForm({
+  initialValues,
+  submitLabel = "Create Job",
+  isSubmitting,
+  error,
+  onSubmit,
+  allowMilestones = true,
+}: JobFormProps) {
   const { user } = useAuth();
   const [values, setValues] = useState<JobFormValues>({ ...EMPTY, ...initialValues });
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -47,6 +68,23 @@ export default function JobForm({ initialValues, submitLabel = "Create Job", isS
   const set = <K extends keyof JobFormValues>(key: K, value: JobFormValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
   };
+
+  const addMilestone = () => {
+    setValues((v) => ({ ...v, milestones: [...v.milestones, { ...EMPTY_MILESTONE }] }));
+  };
+
+  const removeMilestone = (index: number) => {
+    setValues((v) => ({ ...v, milestones: v.milestones.filter((_, i) => i !== index) }));
+  };
+
+  const updateMilestone = (index: number, key: keyof JobMilestoneInput, value: string) => {
+    setValues((v) => ({
+      ...v,
+      milestones: v.milestones.map((m, i) => (i === index ? { ...m, [key]: value } : m)),
+    }));
+  };
+
+  const milestonesTotal = values.milestones.reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
 
   const getTomorrowString = () => {
     const tomorrow = new Date();
@@ -77,6 +115,13 @@ export default function JobForm({ initialValues, submitLabel = "Create Job", isS
         return "Deadline must be greater than the current date.";
       }
     }
+    if (allowMilestones) {
+      for (const m of values.milestones) {
+        if (!m.title.trim() && !m.amount) continue; // ignore fully-blank rows
+        if (!m.title.trim()) return "Every milestone needs a title.";
+        if (!m.amount || Number(m.amount) <= 0) return "Every milestone needs a positive amount.";
+      }
+    }
     return null;
   };
 
@@ -97,6 +142,11 @@ export default function JobForm({ initialValues, submitLabel = "Create Job", isS
       title: values.title.trim(),
       description: values.description.trim(),
       budget: String(Number(values.budget)),
+      milestones: allowMilestones
+        ? values.milestones
+            .filter((m) => m.title.trim() && Number(m.amount) > 0)
+            .map((m) => ({ ...m, title: m.title.trim(), description: m.description.trim() }))
+        : [],
     });
   };
 
@@ -194,6 +244,85 @@ export default function JobForm({ initialValues, submitLabel = "Create Job", isS
           </div>
         </div>
       </div>
+
+      {allowMilestones && (
+        <div className="space-y-4 pt-2 border-t border-surface-border">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <label className="block text-[11px] font-mono font-semibold uppercase text-muted mb-1">
+                Milestones (optional)
+              </label>
+              <p className="text-[11px] text-muted">
+                Split the budget into deliverables the freelancer submits and you release one at a time. Leave empty for a single lump-sum payout — milestones can only be set now, not added later.
+              </p>
+            </div>
+            {values.milestones.length > 0 && (
+              <span
+                className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border shrink-0 ${
+                  values.budget && Number(values.budget) === milestonesTotal
+                    ? "bg-moss/10 text-moss border-moss/30"
+                    : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                }`}
+              >
+                Milestones total: {milestonesTotal} {values.tokenSymbol} / Budget: {values.budget || 0} {values.tokenSymbol}
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {values.milestones.map((m, i) => (
+              <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_140px_auto] gap-3 items-start bg-background border border-surface-border rounded-xl p-3.5">
+                <div>
+                  <label className="block text-[10px] font-mono text-muted uppercase mb-1">Title</label>
+                  <input
+                    value={m.title}
+                    onChange={(e) => updateMilestone(i, "title", e.target.value)}
+                    placeholder={`Milestone ${i + 1}`}
+                    className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-moss/60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono text-muted uppercase mb-1">Description</label>
+                  <input
+                    value={m.description}
+                    onChange={(e) => updateMilestone(i, "description", e.target.value)}
+                    placeholder="What must be delivered"
+                    className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-moss/60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono text-muted uppercase mb-1">Amount</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={m.amount}
+                    onChange={(e) => updateMilestone(i, "amount", e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-moss/60"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeMilestone(i)}
+                  className="self-end sm:self-center p-2 rounded-lg text-muted hover:text-[#EF4444] hover:bg-[#EF4444]/10 transition"
+                  title="Remove milestone"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addMilestone}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-surface-border text-muted hover:text-foreground hover:border-moss/50 text-xs font-semibold transition"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Milestone
+          </button>
+        </div>
+      )}
 
       {(validationError || error) && (
         <div className="p-3.5 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-xs text-[#EF4444]">

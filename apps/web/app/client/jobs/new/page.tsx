@@ -38,6 +38,11 @@ export default function NewJobPage() {
         skills: values.skills,
         deadline: values.deadline ? new Date(values.deadline).toISOString() : null,
         status,
+        milestones: values.milestones.map((m) => ({
+          title: m.title,
+          description: m.description,
+          amount: Number(m.amount),
+        })),
       });
       router.push(`/client/jobs/${res.job.id}`);
     } catch (e) {

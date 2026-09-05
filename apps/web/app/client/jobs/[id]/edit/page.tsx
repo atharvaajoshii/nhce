@@ -107,6 +107,7 @@ export default function EditJobPage() {
             tokenSymbol: job.tokenSymbol,
             deadline: job.deadline ? new Date(job.deadline).toISOString().slice(0, 10) : "",
           }}
+          allowMilestones={false}
           isSubmitting={submitting}
           error={submitError}
           submitLabel={job.status === "DRAFT" ? "Save & Publish" : "Save Changes"}
