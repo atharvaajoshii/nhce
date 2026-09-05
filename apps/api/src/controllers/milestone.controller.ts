@@ -107,9 +107,6 @@ export class MilestoneController {
       const id = String(req.params.id);
       const { deliverableLink, deliverableNotes, githubPrUrl, deploymentUrl, jobId, milestoneNum } = req.body;
 
-<<<<<<< HEAD
-      const milestone = await prisma.milestone.findUnique({ where: { id }, include: { job: true } });
-=======
       const milestone = await resolveMilestone(id, jobId, milestoneNum);
       if (!milestone) {
         res.status(404).json({ error: 'Milestone not found' });
@@ -132,6 +129,22 @@ export class MilestoneController {
           revisionReason: null
         },
         include: { job: { include: { milestones: { orderBy: { order: 'asc' } } } } }
+      });
+
+      void recordLedgerEvent({
+        jobId: milestone.jobId,
+        milestoneId: milestone.id,
+        eventType: LedgerEventType.MILESTONE_SUBMITTED,
+        status: LedgerStatus.CONFIRMED,
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        amount: milestone.amount,
+        currency: milestone.job.tokenSymbol,
+        previousStatus: milestone.status,
+        newStatus: updatedMilestone.status,
+        description: 'Milestone deliverable submitted',
+        details: { deliverableLink, githubPrUrl, deploymentUrl },
+        dedupeKey: `milestone-submitted:${milestone.id}:${updatedMilestone.submittedAt!.getTime()}`
       });
 
       res.json({
@@ -163,7 +176,6 @@ export class MilestoneController {
       }
 
       const milestone = await resolveMilestone(id, jobId, milestoneNum);
->>>>>>> 4dadfa6 (feat: Gemini 2.5 Flash deliverable evaluation and milestone fund release payout pipeline)
       if (!milestone) {
         res.status(404).json({ error: 'Milestone not found' });
         return;
@@ -181,8 +193,8 @@ export class MilestoneController {
 
       void recordLedgerEvent({
         jobId: milestone.jobId,
-        milestoneId: id,
-        eventType: LedgerEventType.MILESTONE_SUBMITTED,
+        milestoneId: milestone.id,
+        eventType: LedgerEventType.MILESTONE_REJECTED,
         status: LedgerStatus.CONFIRMED,
         actorId: req.user.id,
         actorRole: req.user.role,
@@ -190,9 +202,9 @@ export class MilestoneController {
         currency: milestone.job.tokenSymbol,
         previousStatus: milestone.status,
         newStatus: updatedMilestone.status,
-        description: 'Milestone deliverable submitted',
-        details: { deliverableLink, githubPrUrl, deploymentUrl },
-        dedupeKey: `milestone-submitted:${id}:${updatedMilestone.submittedAt!.getTime()}`
+        description: 'Milestone revision requested',
+        details: { reason: reason.trim() },
+        dedupeKey: `milestone-rejected:${milestone.id}:${Date.now()}`
       });
 
       res.json({
