@@ -97,8 +97,11 @@ export default function NewJobPage() {
           return;
         }
       }
-    } catch (e) {
-      console.warn("Backend sync failed, navigating to local job view", e);
+    } catch (e: any) {
+      console.error("Backend job creation error:", e);
+      setError(apiErrorMessage(e));
+      setSubmitting(null);
+      return;
     }
 
     router.push(`/client/jobs/${newJobId}`);

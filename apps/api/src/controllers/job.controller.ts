@@ -83,9 +83,23 @@ export class JobController {
         return;
       }
 
-      // Auto-assign dev wallet if user has no wallet connected yet
-      const clientUser = await prisma.user.findUnique({ where: { id: req.user.id } });
-      if (!clientUser?.walletAddress) {
+      // Ensure client user exists in Prisma DB so clientId foreign key constraint never fails
+      let clientUser = await prisma.user.findUnique({ where: { id: req.user.id } }).catch(() => null);
+      if (!clientUser) {
+        clientUser = await prisma.user.upsert({
+          where: { id: req.user.id },
+          update: {
+            walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+          },
+          create: {
+            id: req.user.id,
+            name: (req.user as any).name || 'Client',
+            email: req.user.email || `client-${req.user.id.slice(0, 8)}@w3hire.io`,
+            role: 'CLIENT',
+            walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+          }
+        }).catch(() => null);
+      } else if (!clientUser.walletAddress) {
         await prisma.user.update({
           where: { id: req.user.id },
           data: { walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' }
@@ -149,10 +163,10 @@ export class JobController {
             ? {
                 milestones: {
                   create: milestones.map((m: any, idx: number) => ({
-                    order: m.order || idx + 1,
-                    title: m.title || `Milestone ${idx + 1}`,
-                    description: m.description || `Deliverable for Milestone ${idx + 1}`,
-                    amount: parseFloat(m.amount) || parsedBudget / milestones.length,
+                    order: Number(m.order) || idx + 1,
+                    title: String(m.title || `Milestone ${idx + 1}`),
+                    description: String(m.description || `Deliverable for Milestone ${idx + 1}`),
+                    amount: parseFloat(m.amount) > 0 ? parseFloat(m.amount) : parsedBudget / milestones.length,
                     status: idx === 0 ? MilestoneStatus.IN_PROGRESS : MilestoneStatus.LOCKED
                   }))
                 }
@@ -200,7 +214,7 @@ export class JobController {
         await prisma.user.update({
           where: { id: req.user.id },
           data: { jobsPostedCount: { increment: 1 } }
-        });
+        }).catch(() => {});
       }
 
       if (status === 'PUBLISHED' || status === 'OPEN') {
@@ -214,6 +228,7 @@ export class JobController {
 
       res.status(201).json({ message: 'Job created successfully', job: newJob });
     } catch (error: any) {
+      console.error('[createJob] Failed to create job:', error);
       res.status(500).json({ error: 'Failed to create job', message: error.message });
     }
   }
