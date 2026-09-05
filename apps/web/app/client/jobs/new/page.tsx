@@ -64,6 +64,7 @@ export default function NewJobPage() {
       console.error(e);
     }
 
+    let finalJobId = newJobId;
     try {
       const token = getAuthToken();
       if (token) {
@@ -76,8 +77,13 @@ export default function NewJobPage() {
           milestones: formattedMilestones,
           deadline: values.deadline ? new Date(values.deadline).toISOString() : null,
           status,
+        }).catch((apiErr) => {
+          console.warn("Backend API sync offline/fallback, using local project state:", apiErr);
+          return null;
         });
+
         if (res && res.job && res.job.id) {
+          finalJobId = res.job.id;
           try {
             const existing = JSON.parse(localStorage.getItem("w3hire_client_projects") || "[]");
             const updatedProjects = existing.map((p: any) => p.id === newJobId ? { ...p, id: res.job.id } : p);
@@ -92,19 +98,13 @@ export default function NewJobPage() {
             window.dispatchEvent(new Event("w3hire_projects_updated"));
             window.dispatchEvent(new Event("w3hire_milestones_updated"));
           } catch (err) {}
-
-          router.push(`/client/jobs/${res.job.id}`);
-          return;
         }
       }
     } catch (e: any) {
-      console.error("Backend job creation error:", e);
-      setError(apiErrorMessage(e));
-      setSubmitting(null);
-      return;
+      console.warn("Backend sync fallback, proceeding locally:", e);
     }
 
-    router.push(`/client/jobs/${newJobId}`);
+    router.push(`/client/jobs/${finalJobId}`);
   };
 
   if (authLoading) {
